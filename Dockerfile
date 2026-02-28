@@ -1,21 +1,17 @@
 ﻿# ── Phase 1: Build ────────────────────────────────────────────────────────────
-# Wir nutzen das offizielle .NET 8 SDK Image um das Projekt zu kompilieren
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 
 WORKDIR /src
 
-# Zuerst nur die .csproj kopieren und Abhängigkeiten laden
-# (Docker cached diesen Layer – spart Zeit bei späteren Builds)
-COPY ["mortys-twitch-discord-schedulebot/mortys-twitch-discord-schedulebot.csproj", "mortys-twitch-discord-schedulebot/"]
-RUN dotnet restore "mortys-twitch-discord-schedulebot/mortys-twitch-discord-schedulebot.csproj"
+# .csproj kopieren und Abhängigkeiten laden
+COPY ["mortys-twitch-discord-schedulebot.csproj", "."]
+RUN dotnet restore "mortys-twitch-discord-schedulebot.csproj"
 
 # Restlichen Code kopieren und kompilieren
 COPY . .
-WORKDIR "/src/mortys-twitch-discord-schedulebot"
-RUN dotnet publish -c Release -o /app/publish
+RUN dotnet publish "mortys-twitch-discord-schedulebot.csproj" -c Release -o /app/publish
 
 # ── Phase 2: Runtime ──────────────────────────────────────────────────────────
-# Nur das schlanke Runtime-Image verwenden – kein SDK nötig zum Ausführen
 FROM mcr.microsoft.com/dotnet/runtime:8.0 AS runtime
 
 WORKDIR /app
