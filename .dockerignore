@@ -1,0 +1,19 @@
+﻿# Docker eigene Dateien
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Git
+.git
+.gitignore
+
+# Visual Studio
+.vs/
+bin/
+obj/
+
+# Konfiguration mit Secrets
+appsettings.json
+
+# Dokumentation
+README.md
