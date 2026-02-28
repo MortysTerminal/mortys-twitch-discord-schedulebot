@@ -1,12 +1,26 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace mortys_twitch_discord_schedulebot.Models
+﻿namespace mortys_twitch_discord_schedulebot.Models
 {
-    internal class TwitchChannelConfig
+    /// <summary>
+    /// Repräsentiert einen konfigurierten Twitch-Kanal.
+    /// Wird aus der appsettings.json geladen.
+    /// </summary>
+    public class TwitchChannelConfig
     {
+        /// <summary>
+        /// Der Twitch-Username des Kanals (kleingeschrieben, wie in der URL).
+        /// Beispiel: "shroud"
+        /// </summary>
+        public string Username { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Der Anzeigename, der im Discord Event erscheint.
+        /// Beispiel: "Shroud"
+        /// </summary>
+        public string DisplayName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gibt den vollständigen Twitch-Kanal-Link zurück.
+        /// </summary>
+        public string ChannelUrl => $"https://www.twitch.tv/{Username}";
     }
 }
