@@ -1,0 +1,23 @@
+﻿services:
+  schedulebot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mortys-schedulebot
+    restart: unless-stopped
+
+    # ── Secrets als Umgebungsvariablen ────────────────────────────────────────
+    # Diese Werte NIEMALS in diese Datei schreiben!
+    # Sie werden in Portainer als Environment Variables gesetzt.
+    environment:
+      - Discord__BotToken=${DISCORD_BOT_TOKEN}
+      - Discord__GuildId=${DISCORD_GUILD_ID}
+      - Twitch__ClientId=${TWITCH_CLIENT_ID}
+      - Twitch__ClientSecret=${TWITCH_CLIENT_SECRET}
+
+    # ── Logging ───────────────────────────────────────────────────────────────
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
