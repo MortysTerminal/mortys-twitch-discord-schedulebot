@@ -24,8 +24,9 @@ try
         {
             config
                 .SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                .AddEnvironmentVariables(); // Für Docker: Secrets als Env-Variablen
+                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+                .AddJsonFile($"appsettings.{context.HostingEnvironment.EnvironmentName}.json", optional: true)
+                .AddEnvironmentVariables();
         })
 
         // ── Serilog als Logging-Provider einsetzen ─────────────────────────────
