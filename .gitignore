@@ -1,0 +1,21 @@
+﻿# .NET Build-Artefakte
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Secrets – NIEMALS auf GitHub!
+**/appsettings.json
+
+# Aber die Beispiel-Vorlage ist erlaubt
+!**/appsettings.example.json
+
+# Environment Files
+.env
+*.env
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
