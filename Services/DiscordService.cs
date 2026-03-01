@@ -138,7 +138,10 @@ namespace mortys_twitch_discord_schedulebot.Services
         {
             try
             {
-                var endTime = entry.EndTime ?? entry.StartTime.AddHours(3);
+                // Sicherstellen dass EndTime immer NACH StartTime liegt
+                var endTime = (entry.EndTime.HasValue && entry.EndTime.Value > entry.StartTime)
+                    ? entry.EndTime.Value
+                    : entry.StartTime.AddHours(3);
 
                 // Der Titel zeigt: "Streamername – Streamtitel"
                 var eventName = $"{entry.StreamerDisplayName} – {entry.Title}";
@@ -185,7 +188,9 @@ namespace mortys_twitch_discord_schedulebot.Services
                 expectedName = expectedName[..97] + "...";
 
             var expectedDescription = BuildEventDescription(entry);
-            var expectedEndTime = entry.EndTime ?? entry.StartTime.AddHours(3);
+            var expectedEndTime = (entry.EndTime.HasValue && entry.EndTime.Value > entry.StartTime)
+                ? entry.EndTime.Value
+                : entry.StartTime.AddHours(3);
 
             // Prüfen ob sich irgendetwas geändert hat
             bool hasChanged =
