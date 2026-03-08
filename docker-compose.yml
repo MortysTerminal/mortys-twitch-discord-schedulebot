@@ -1,8 +1,6 @@
 ﻿services:
   schedulebot:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/mortysterminal/mortys-twitch-discord-schedulebot:latest
     container_name: mortys-schedulebot
     restart: unless-stopped
 
