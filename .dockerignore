@@ -1,4 +1,4 @@
-﻿# Docker eigene Dateien
+# Docker own files
 Dockerfile
 docker-compose.yml
 .dockerignore
@@ -12,8 +12,10 @@ docker-compose.yml
 bin/
 obj/
 
-# Konfiguration mit Secrets
-appsettings.json
+# Prevent operator-specific overrides from leaking into the image.
+# appsettings.json (safe defaults) IS included intentionally.
+appsettings.Production.json
+appsettings.Development.json
 
-# Dokumentation
+# Documentation
 README.md

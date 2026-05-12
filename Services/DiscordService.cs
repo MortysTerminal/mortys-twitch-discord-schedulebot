@@ -1,4 +1,4 @@
-﻿using Discord;
+using Discord;
 using Discord.Rest;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -6,81 +6,72 @@ using mortys_twitch_discord_schedulebot.Models;
 
 namespace mortys_twitch_discord_schedulebot.Services
 {
-    /// <summary>
-    /// Verantwortlich für die gesamte Kommunikation mit Discord.
-    /// Erstellt, aktualisiert und löscht Discord Events basierend auf dem Twitch-Zeitplan.
-    /// </summary>
     public class DiscordService : IAsyncDisposable
     {
         private readonly DiscordRestClient _client;
         private readonly ulong _guildId;
         private readonly ILogger<DiscordService> _logger;
         private readonly string _configuration_token;
+        // Controls the language used in Discord event content (labels, fallback strings).
+        // Set Discord__EventLanguage=de for German, defaults to English.
+        private readonly bool _germanEvents;
 
         public DiscordService(IConfiguration configuration, ILogger<DiscordService> logger)
         {
             _logger = logger;
 
             var token = configuration["Discord:BotToken"]
-                ?? throw new InvalidOperationException("Discord BotToken fehlt in der Konfiguration.");
+                ?? throw new InvalidOperationException("Discord:BotToken is missing from configuration.");
 
             _configuration_token = token;
 
             var guildIdRaw = configuration["Discord:GuildId"]
-                ?? throw new InvalidOperationException("Discord GuildId fehlt in der Konfiguration.");
+                ?? throw new InvalidOperationException("Discord:GuildId is missing from configuration.");
 
             if (!ulong.TryParse(guildIdRaw, out _guildId))
-                throw new InvalidOperationException("Discord GuildId ist ungültig – muss eine Zahl sein.");
+                throw new InvalidOperationException("Discord:GuildId is invalid — must be a numeric value.");
 
-            // Wir nutzen den RestClient – kein Gateway nötig, da wir nur Events verwalten
+            var lang = configuration["Discord:EventLanguage"] ?? "en";
+            _germanEvents = lang.Equals("de", StringComparison.OrdinalIgnoreCase);
+
             _client = new DiscordRestClient();
 
-            _logger.LogInformation("DiscordService initialisiert.");
+            _logger.LogInformation(
+                "DiscordService initialized (event language: {Language}).",
+                _germanEvents ? "de" : "en"
+            );
         }
 
-        /// <summary>
-        /// Verbindet den Bot mit Discord.
-        /// Muss einmal vor allen anderen Operationen aufgerufen werden.
-        /// </summary>
         public async Task LoginAsync()
         {
             await _client.LoginAsync(TokenType.Bot, _configuration_token);
-            _logger.LogInformation("Discord Login erfolgreich.");
+            _logger.LogInformation("Discord login successful.");
         }
 
-        /// <summary>
-        /// Synchronisiert die Twitch-Zeitpläne mit den Discord Events.
-        /// - Neue Einträge werden als Events erstellt
-        /// - Bestehende Events werden aktualisiert falls sich etwas geändert hat
-        /// - Events die nicht mehr im Zeitplan sind werden gelöscht
-        /// </summary>
         public async Task SyncEventsAsync(List<StreamScheduleEntry> scheduleEntries)
         {
-            _logger.LogInformation("Starte Discord Event Synchronisation...");
+            _logger.LogInformation("Starting Discord event synchronization...");
 
             var guild = await _client.GetGuildAsync(_guildId);
 
             if (guild == null)
             {
-                _logger.LogError("Discord Server (GuildId: {GuildId}) nicht gefunden.", _guildId);
+                _logger.LogError("Discord server (GuildId: {GuildId}) not found.", _guildId);
                 return;
             }
 
-            // Alle bestehenden Discord Events laden
             var existingEvents = (await guild.GetEventsAsync()).ToList();
 
             _logger.LogInformation(
-                "Gefunden: {ScheduleCount} Twitch-Einträge, {EventCount} bestehende Discord Events.",
+                "Found {ScheduleCount} Twitch entries and {EventCount} existing Discord events.",
                 scheduleEntries.Count,
                 existingEvents.Count
             );
 
-            // Für jeden Twitch-Zeitplaneintrag prüfen ob ein Event existiert oder erstellt werden muss
             var processedEventIds = new HashSet<ulong>();
 
             foreach (var entry in scheduleEntries)
             {
-                // Wir erkennen ein zusammengehöriges Event anhand des Titels + Streamers in der Description
                 var matchingEvent = existingEvents.FirstOrDefault(e =>
                     e.Description != null &&
                     e.Description.Contains(entry.TwitchSegmentId)
@@ -88,69 +79,43 @@ namespace mortys_twitch_discord_schedulebot.Services
 
                 if (matchingEvent == null)
                 {
-                    // Event existiert noch nicht → erstellen
                     var createdEvent = await CreateEventAsync(guild, entry);
                     if (createdEvent != null)
                         processedEventIds.Add(createdEvent.Id);
                 }
                 else
                 {
-                    // Event existiert bereits → aktualisieren falls nötig
                     await UpdateEventIfChangedAsync(matchingEvent, entry);
                     processedEventIds.Add(matchingEvent.Id);
                 }
             }
 
-            // Events löschen die nicht mehr im Twitch-Zeitplan sind
-            // (nur Events die von unserem Bot erstellt wurden – erkennbar an der TwitchSegmentId in der Description)
             foreach (var existingEvent in existingEvents)
             {
                 if (existingEvent.Description == null) continue;
 
-                // Prüfen ob dieses Event von unserem Bot stammt (enthält eine Twitch Segment ID)
-                bool isBotEvent = scheduleEntries.Any(e =>
-                    existingEvent.Description.Contains(e.TwitchSegmentId)
-                );
-
-                // Wenn es ein Bot-Event ist, aber nicht mehr in processedEventIds → löschen
-                bool isOurBotEvent = existingEvents
-                    .Where(e => e.Description != null)
-                    .Any(e => scheduleEntries.Any(s => e.Description!.Contains(s.TwitchSegmentId)) &&
-                               e.Id == existingEvent.Id);
-
                 if (!processedEventIds.Contains(existingEvent.Id) && IsOurBotEvent(existingEvent, scheduleEntries))
                 {
                     _logger.LogInformation(
-                        "Discord Event '{Name}' ist nicht mehr im Zeitplan – wird gelöscht.",
+                        "Discord event '{Name}' is no longer in the schedule — deleting.",
                         existingEvent.Name
                     );
                     await existingEvent.DeleteAsync();
                 }
             }
 
-            _logger.LogInformation("Discord Event Synchronisation abgeschlossen.");
+            _logger.LogInformation("Discord event synchronization complete.");
         }
 
-        /// <summary>
-        /// Erstellt ein neues Discord Event aus einem Twitch-Zeitplaneintrag.
-        /// </summary>
         private async Task<RestGuildEvent?> CreateEventAsync(RestGuild guild, StreamScheduleEntry entry)
         {
             try
             {
-                // Sicherstellen dass EndTime immer NACH StartTime liegt
                 var endTime = (entry.EndTime.HasValue && entry.EndTime.Value > entry.StartTime)
                     ? entry.EndTime.Value
                     : entry.StartTime.AddHours(3);
 
-                // Der Titel zeigt: "Streamername – Streamtitel"
-                var eventName = $"{entry.StreamerDisplayName} – {entry.Title}";
-
-                // Maximale Discord-Titellänge ist 100 Zeichen
-                if (eventName.Length > 100)
-                    eventName = eventName[..97] + "...";
-
-                // Die Description enthält alle Details + die TwitchSegmentId zur späteren Erkennung
+                var eventName = BuildEventName(entry);
                 var description = BuildEventDescription(entry);
 
                 var guildEvent = await guild.CreateEventAsync(
@@ -164,35 +129,28 @@ namespace mortys_twitch_discord_schedulebot.Services
                 );
 
                 _logger.LogInformation(
-                    "Discord Event erstellt: '{Name}' am {Date}",
+                    "Discord event created: '{Name}' on {Date}",
                     eventName,
-                    entry.StartTime.ToString("dd.MM.yyyy HH:mm")
+                    entry.StartTime.ToString("yyyy-MM-dd HH:mm")
                 );
 
                 return guildEvent;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Fehler beim Erstellen des Discord Events für '{Title}'.", entry.Title);
+                _logger.LogError(ex, "Failed to create Discord event for '{Title}'.", entry.Title);
                 return null;
             }
         }
 
-        /// <summary>
-        /// Aktualisiert ein bestehendes Discord Event, wenn sich Titel, Zeit oder Spiel geändert haben.
-        /// </summary>
         private async Task UpdateEventIfChangedAsync(RestGuildEvent existingEvent, StreamScheduleEntry entry)
         {
-            var expectedName = $"{entry.StreamerDisplayName} – {entry.Title}";
-            if (expectedName.Length > 100)
-                expectedName = expectedName[..97] + "...";
-
+            var expectedName = BuildEventName(entry);
             var expectedDescription = BuildEventDescription(entry);
             var expectedEndTime = (entry.EndTime.HasValue && entry.EndTime.Value > entry.StartTime)
                 ? entry.EndTime.Value
                 : entry.StartTime.AddHours(3);
 
-            // Prüfen ob sich irgendetwas geändert hat
             bool hasChanged =
                 existingEvent.Name != expectedName ||
                 existingEvent.StartTime != entry.StartTime ||
@@ -200,7 +158,7 @@ namespace mortys_twitch_discord_schedulebot.Services
 
             if (!hasChanged)
             {
-                _logger.LogInformation("Event '{Name}' ist aktuell – keine Änderung nötig.", existingEvent.Name);
+                _logger.LogInformation("Event '{Name}' is up to date — no changes needed.", existingEvent.Name);
                 return;
             }
 
@@ -215,42 +173,60 @@ namespace mortys_twitch_discord_schedulebot.Services
                     props.Location = entry.ChannelUrl;
                 });
 
-                _logger.LogInformation("Discord Event aktualisiert: '{Name}'", expectedName);
+                _logger.LogInformation("Discord event updated: '{Name}'", expectedName);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Fehler beim Aktualisieren des Events '{Name}'.", existingEvent.Name);
+                _logger.LogError(ex, "Failed to update event '{Name}'.", existingEvent.Name);
             }
         }
 
-        /// <summary>
-        /// Baut den Beschreibungstext für ein Discord Event.
-        /// Die TwitchSegmentId ist versteckt am Ende – sie dient zur Wiedererkennung.
-        /// </summary>
-        private static string BuildEventDescription(StreamScheduleEntry entry)
+        // Builds the Discord event title, applying a language-specific fallback when Twitch has no title set.
+        private string BuildEventName(StreamScheduleEntry entry)
         {
-            // Deutsche Zeitzone – funktioniert korrekt für CET (UTC+1) und CEST (UTC+2)
-            var germanTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin");
-            var localStartTime = TimeZoneInfo.ConvertTime(entry.StartTime, germanTimeZone);
+            var title = string.IsNullOrWhiteSpace(entry.Title)
+                ? (_germanEvents ? $"Stream von {entry.StreamerDisplayName}" : $"Stream by {entry.StreamerDisplayName}")
+                : entry.Title;
+
+            var eventName = $"{entry.StreamerDisplayName} – {title}";
+
+            return eventName.Length > 100 ? eventName[..97] + "..." : eventName;
+        }
+
+        // Builds the Discord event description with language-specific labels.
+        // The hidden [twitch-segment-id:...] tag at the end is used to identify bot-managed events.
+        private string BuildEventDescription(StreamScheduleEntry entry)
+        {
+            var berlinZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin");
+            var localStart = TimeZoneInfo.ConvertTime(entry.StartTime, berlinZone);
+
+            var category = string.IsNullOrEmpty(entry.CategoryName)
+                ? (_germanEvents ? "Keine Kategorie" : "No Category")
+                : entry.CategoryName;
+
+            if (_germanEvents)
+            {
+                return $"""
+                        🎬 Inhalt: {category}
+                        📺 Kanal: {entry.ChannelUrl}
+                        🕐 Start: {localStart:dd.MM.yyyy HH:mm} Uhr
+
+                        [twitch-segment-id:{entry.TwitchSegmentId}]
+                        """;
+            }
 
             return $"""
-                    🎬 Inhalt: {entry.CategoryName}
-                    📺 Kanal: {entry.ChannelUrl}
-                    🕐 Start: {localStartTime:dd.MM.yyyy HH:mm} Uhr
+                    🎬 Content: {category}
+                    📺 Channel: {entry.ChannelUrl}
+                    🕐 Start: {localStart:dd.MM.yyyy HH:mm}
 
                     [twitch-segment-id:{entry.TwitchSegmentId}]
                     """;
         }
 
-        /// <summary>
-        /// Prüft ob ein Discord Event von unserem Bot erstellt wurde.
-        /// Erkennungsmerkmal: Die Description enthält eine bekannte TwitchSegmentId.
-        /// </summary>
         private static bool IsOurBotEvent(RestGuildEvent guildEvent, List<StreamScheduleEntry> allEntries)
         {
             if (guildEvent.Description == null) return false;
-
-            // Ein Bot-Event enthält immer das Muster [twitch-segment-id:...]
             return guildEvent.Description.Contains("[twitch-segment-id:");
         }
 

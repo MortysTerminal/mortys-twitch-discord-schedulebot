@@ -1,17 +1,21 @@
-﻿# .NET Build-Artefakte
+# .NET Build artifacts
 bin/
 obj/
 *.user
 *.suo
 .vs/
 
-# Secrets – NIEMALS auf GitHub!
-**/appsettings.json
+# appsettings.json is now tracked (safe defaults only — no secrets).
+# Use appsettings.Development.json for local credential overrides.
+appsettings.Development.json
 
-# Aber die Beispiel-Vorlage ist erlaubt
-!**/appsettings.example.json
+# Prevent accidental re-introduction of the old operator-specific file.
+appsettings.Production.json
 
-# Environment Files
+# Keep the example template
+!appsettings.example.json
+
+# Environment files
 .env
 *.env
 docker-compose.override.yml
