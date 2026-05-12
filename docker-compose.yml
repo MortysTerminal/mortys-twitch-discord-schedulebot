@@ -1,17 +1,32 @@
-﻿services:
+services:
   schedulebot:
     image: ghcr.io/mortysterminal/mortys-twitch-discord-schedulebot:latest
     container_name: mortys-schedulebot
     restart: unless-stopped
 
-    # ── Secrets als Umgebungsvariablen ────────────────────────────────────────
-    # Diese Werte NIEMALS in diese Datei schreiben!
-    # Sie werden in Portainer als Environment Variables gesetzt.
     environment:
+      # ── Secrets (set in Portainer stack environment variables) ──
       - Discord__BotToken=${DISCORD_BOT_TOKEN}
       - Discord__GuildId=${DISCORD_GUILD_ID}
       - Twitch__ClientId=${TWITCH_CLIENT_ID}
       - Twitch__ClientSecret=${TWITCH_CLIENT_SECRET}
+
+      # ── Twitch channels (operator-specific, 0-indexed, contiguous) ──
+      # Add one Username/DisplayName pair per channel. Increment the index
+      # for each additional channel. Portainer stack variables can provide
+      # these values directly.
+      - Twitch__Channels__0__Username=${TWITCH_CHANNEL_0_USERNAME}
+      - Twitch__Channels__0__DisplayName=${TWITCH_CHANNEL_0_DISPLAYNAME}
+      # - Twitch__Channels__1__Username=${TWITCH_CHANNEL_1_USERNAME}
+      # - Twitch__Channels__1__DisplayName=${TWITCH_CHANNEL_1_DISPLAYNAME}
+
+      # ── Discord event language (controls labels inside Discord events) ──
+      # "en" = English (default), "de" = German
+      # - Discord__EventLanguage=en
+
+      # ── Optional sync overrides (defaults: 30 min, 14 days) ──
+      # - Sync__IntervalMinutes=30
+      # - Sync__LookaheadDays=14
 
     # ── Logging ───────────────────────────────────────────────────────────────
     logging:

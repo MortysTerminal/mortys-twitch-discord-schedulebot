@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using mortys_twitch_discord_schedulebot.Services;
@@ -6,8 +6,7 @@ using Serilog;
 using TwitchLib.Api.Helix.Models.Extensions.ReleasedExtensions;
 using TwitchLib.Api.ThirdParty.ModLookup;
 
-// ── Serilog Logger konfigurieren ──────────────────────────────────────────────
-// Dieser Logger läuft bevor der Host gestartet wird (für Startfehler)
+// Bootstrap logger active before the host starts (catches startup failures)
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
     .WriteTo.Console(outputTemplate: "{Timestamp:HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
@@ -15,11 +14,11 @@ Log.Logger = new LoggerConfiguration()
 
 try
 {
-    Log.Information("Mortys Twitch-Discord Schedulebot startet...");
+    Log.Information("Twitch-Discord Schedule Bot starting...");
 
     var host = Host.CreateDefaultBuilder(args)
 
-        // ── Konfiguration ──────────────────────────────────────────────────────
+        // ── Configuration ──────────────────────────────────────────────────────
         .ConfigureAppConfiguration((context, config) =>
         {
             config
@@ -29,7 +28,7 @@ try
                 .AddEnvironmentVariables();
         })
 
-        // ── Serilog als Logging-Provider einsetzen ─────────────────────────────
+        // ── Logging ────────────────────────────────────────────────────────────
         .UseSerilog((context, services, loggerConfig) =>
         {
             loggerConfig
@@ -39,28 +38,23 @@ try
                 );
         })
 
-        // ── Services registrieren (Dependency Injection) ───────────────────────
+        // ── Services ───────────────────────────────────────────────────────────
         .ConfigureServices((context, services) =>
         {
-            // Unsere eigenen Services
             services.AddSingleton<TwitchService>();
             services.AddSingleton<DiscordService>();
-
-            // SyncService als Hosted Service – startet automatisch mit dem Bot
             services.AddHostedService<SyncService>();
         })
 
         .Build();
 
-    // Bot starten – läuft jetzt bis er manuell gestoppt wird (Strg+C oder Docker stop)
     await host.RunAsync();
 }
 catch (Exception ex)
 {
-    Log.Fatal(ex, "Bot konnte nicht gestartet werden.");
+    Log.Fatal(ex, "Bot failed to start.");
 }
 finally
 {
-    // Serilog sauber beenden
     await Log.CloseAndFlushAsync();
 }
