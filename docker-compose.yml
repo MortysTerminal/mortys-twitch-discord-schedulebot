@@ -11,14 +11,29 @@ services:
       - Twitch__ClientId=${TWITCH_CLIENT_ID}
       - Twitch__ClientSecret=${TWITCH_CLIENT_SECRET}
 
-      # ── Twitch channels (operator-specific, 0-indexed, contiguous) ──
-      # Add one Username/DisplayName pair per channel. Increment the index
-      # for each additional channel. Portainer stack variables can provide
-      # these values directly.
-      - Twitch__Channels__0__Username=${TWITCH_CHANNEL_0_USERNAME}
-      - Twitch__Channels__0__DisplayName=${TWITCH_CHANNEL_0_DISPLAYNAME}
-      # - Twitch__Channels__1__Username=${TWITCH_CHANNEL_1_USERNAME}
-      # - Twitch__Channels__1__DisplayName=${TWITCH_CHANNEL_1_DISPLAYNAME}
+      # ── Twitch channels ──────────────────────────────────────────────────────
+      # Set these directly as Portainer stack environment variables using the
+      # exact names below. Only set the slots you need — unset slots are simply
+      # ignored. Indices must be contiguous starting from 0.
+      #
+      # Example Portainer stack variables:
+      #   Twitch__Channels__0__Username    = mortys_welt
+      #   Twitch__Channels__0__DisplayName = MORTYS WELT
+      #   Twitch__Channels__1__Username    = dentugaming
+      #   Twitch__Channels__1__DisplayName = DentuGaming
+      #
+      # Slots 0–4 are available without editing this file.
+      # Add more <None Update> lines in the same pattern for slot 5+.
+      - Twitch__Channels__0__Username
+      - Twitch__Channels__0__DisplayName
+      - Twitch__Channels__1__Username
+      - Twitch__Channels__1__DisplayName
+      - Twitch__Channels__2__Username
+      - Twitch__Channels__2__DisplayName
+      - Twitch__Channels__3__Username
+      - Twitch__Channels__3__DisplayName
+      - Twitch__Channels__4__Username
+      - Twitch__Channels__4__DisplayName
 
       # ── Discord event language (controls labels inside Discord events) ──
       # "en" = English (default), "de" = German

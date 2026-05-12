@@ -29,7 +29,13 @@ namespace mortys_twitch_discord_schedulebot.Services
                 .GetSection("Twitch:Channels")
                 .Get<List<TwitchChannelConfig>>();
 
-            if (channels == null || channels.Count == 0)
+            // Filter out any slots that were declared in docker-compose.yml but left
+            // unset in Portainer (Docker passes them as empty strings in that case).
+            var validChannels = channels?
+                .Where(c => !string.IsNullOrWhiteSpace(c.Username))
+                .ToList();
+
+            if (validChannels == null || validChannels.Count == 0)
             {
                 _logger.LogError(
                     "No Twitch channels are configured. Set at least one channel pair via environment variables: " +
@@ -41,7 +47,7 @@ namespace mortys_twitch_discord_schedulebot.Services
                 );
             }
 
-            _channels = channels;
+            _channels = validChannels;
             _lookaheadDays = configuration.GetValue<int>("Sync:LookaheadDays", 14);
 
             _twitchApi = new TwitchAPI();
