@@ -84,9 +84,9 @@ Unset slots are automatically ignored — only the slots you fill in Portainer a
 
 | Environment variable | Default | Description |
 |---|---|---|
-| `Discord__EventLanguage` | `en` | Language used inside Discord events: `en` (English) or `de` (German) |
-| `Sync__IntervalMinutes` | `30` | How often (in minutes) the bot syncs with Twitch |
-| `Sync__LookaheadDays` | `14` | How many days ahead to include in Discord events |
+| `Discord__EventLanguage` | `en` | Language used inside Discord events: `en` (English) or `de` (German). Set in Portainer to override. |
+| `Sync__IntervalMinutes` | `30` | How often (in minutes) the bot syncs with Twitch. Set in Portainer to override. |
+| `Sync__LookaheadDays` | `14` | How many days ahead to include in Discord events. Set in Portainer to override. |
 | `DOTNET_ENVIRONMENT` | *(not set)* | Set to `Production` if you want environment-specific config loading |
 
 ---
