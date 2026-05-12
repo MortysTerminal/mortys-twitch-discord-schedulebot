@@ -65,16 +65,20 @@ All configuration is supplied via **environment variables**. The image ships wit
 
 ### Additional channels
 
-Use contiguous, zero-based indices. Add as many as you need:
+`docker-compose.yml` pre-defines slots 0–4. To add channels, just set more variables in Portainer — **no editing of `docker-compose.yml` required**. Use the exact .NET notation as the variable name:
 
 ```
-Twitch__Channels__1__Username=secondchannel
-Twitch__Channels__1__DisplayName=Second Channel
-Twitch__Channels__2__Username=thirdchannel
-Twitch__Channels__2__DisplayName=Third Channel
+Twitch__Channels__0__Username    = mortys_welt
+Twitch__Channels__0__DisplayName = MORTYS WELT
+Twitch__Channels__1__Username    = dentugaming
+Twitch__Channels__1__DisplayName = DentuGaming
+Twitch__Channels__2__Username    = thirdchannel
+Twitch__Channels__2__DisplayName = Third Channel
 ```
 
-> **Important:** The index sequence must be contiguous (0, 1, 2 …). A gap stops .NET from reading subsequent entries.
+Unset slots are automatically ignored — only the slots you fill in Portainer are passed to the container. Need more than 5 channels? Add the same pass-through pattern to `docker-compose.yml` for slots 5+.
+
+> **Important:** Indices must be contiguous starting from 0. A gap (e.g. setting 0 and 2 but not 1) stops .NET from reading anything after the gap.
 
 ### Optional
 
@@ -103,18 +107,21 @@ This is the cleanest approach: Portainer pulls `docker-compose.yml` directly fro
 2. Choose **Repository**
 3. Set the repository URL to your fork (or this repo if public)
 4. Leave the compose file path as `docker-compose.yml`
-5. Scroll down to **Environment variables** and add every variable from the table above:
+5. Scroll down to **Environment variables** and add your values. Secrets use short names (referenced as `${...}` in the compose file); channel variables use the exact .NET notation:
 
    ```
-   DISCORD_BOT_TOKEN       = <your token>
-   DISCORD_GUILD_ID        = <your server id>
-   TWITCH_CLIENT_ID        = <your client id>
-   TWITCH_CLIENT_SECRET    = <your client secret>
-   TWITCH_CHANNEL_0_USERNAME    = shroud
-   TWITCH_CHANNEL_0_DISPLAYNAME = Shroud
+   DISCORD_BOT_TOKEN    = <your token>
+   DISCORD_GUILD_ID     = <your server id>
+   TWITCH_CLIENT_ID     = <your client id>
+   TWITCH_CLIENT_SECRET = <your client secret>
+
+   Twitch__Channels__0__Username    = mortys_welt
+   Twitch__Channels__0__DisplayName = MORTYS WELT
+   Twitch__Channels__1__Username    = dentugaming
+   Twitch__Channels__1__DisplayName = DentuGaming
    ```
 
-   The `docker-compose.yml` references these with `${...}` placeholders — Portainer substitutes them at deploy time.
+   Channel variables are passed directly into the container — just add or remove pairs to control how many channels the bot monitors.
 
 6. Click **Deploy the stack**
 
@@ -128,8 +135,8 @@ docker run -d \
   -e Discord__GuildId="YOUR_GUILD_ID" \
   -e Twitch__ClientId="YOUR_CLIENT_ID" \
   -e Twitch__ClientSecret="YOUR_CLIENT_SECRET" \
-  -e Twitch__Channels__0__Username="somechannel" \
-  -e Twitch__Channels__0__DisplayName="Some Channel" \
+  -e Twitch__Channels__0__Username="mortys_welt" \
+  -e Twitch__Channels__0__DisplayName="MORTYS WELT" \
   ghcr.io/mortysterminal/mortys-twitch-discord-schedulebot:latest
 ```
 
@@ -144,19 +151,22 @@ After deploying in Portainer, open **Containers → schedulebot → Logs** (or c
 A successful startup looks like this:
 
 ```
-HH:mm:ss [INF] Mortys Twitch-Discord Schedulebot startet...
-HH:mm:ss [INF] TwitchService initialized with 1 channel(s): Shroud
-HH:mm:ss [INF] DiscordService initialisiert.
-HH:mm:ss [INF] SyncService gestartet – Synchronisation alle 30 Minuten.
-HH:mm:ss [INF] Discord Login erfolgreich.
-HH:mm:ss [INF] Starte Synchronisation...
+HH:mm:ss [INF] Twitch-Discord Schedule Bot starting...
+HH:mm:ss [INF] TwitchService initialized with 1 channel(s): MORTYS WELT
+HH:mm:ss [INF] DiscordService initialized (event language: en).
+HH:mm:ss [INF] SyncService started — syncing every 30 minute(s).
+HH:mm:ss [INF] Application started. Press Ctrl+C to shut down.
+HH:mm:ss [INF] Hosting environment: Production
+HH:mm:ss [INF] Discord login successful.
+HH:mm:ss [INF] ═══════════════════════════════════════
+HH:mm:ss [INF] Starting sync...
 ```
 
 The `TwitchService initialized with N channel(s): ...` line is your confirmation that the environment variables were read correctly.
 
 ### Step 2 — Test the fail-fast behavior (no channels configured)
 
-Deploy the stack once **without** the `TWITCH_CHANNEL_0_USERNAME` / `TWITCH_CHANNEL_0_DISPLAYNAME` variables. The container should exit immediately with:
+Deploy the stack once **without** the `Twitch__Channels__0__Username` / `Twitch__Channels__0__DisplayName` variables. The container should exit immediately with:
 
 ```
 [ERR] No Twitch channels are configured. Set at least one channel pair via environment variables:
@@ -170,9 +180,9 @@ This confirms the guard works and the image is not silently doing nothing. Re-ad
 Watch the logs for the first sync cycle. You should see:
 
 ```
-HH:mm:ss [INF] Twitch Authentifizierung erfolgreich.
-HH:mm:ss [INF] Hole Zeitplan für Kanal: somechannel
-HH:mm:ss [INF] Kanal somechannel: N Einträge gefunden.
+HH:mm:ss [INF] Twitch authentication successful.
+HH:mm:ss [INF] Fetching schedule for channel: mortys_welt
+HH:mm:ss [INF] Channel mortys_welt: 3 entries found.
 ```
 
 If you see an authentication error here, double-check `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET`.
@@ -183,7 +193,7 @@ Go to your Discord server → **Events** (the calendar icon in the left sidebar 
 
 If events are missing:
 - Make sure the bot has the **Manage Events** permission in the server
-- Check the logs for `Fehler beim Erstellen des Discord Events` lines
+- Check the logs for `Failed to create Discord event` lines
 - Confirm the Twitch channel has actual upcoming scheduled segments (not all streamers use the schedule feature)
 
 ### Step 5 — Test an update cycle
@@ -196,14 +206,14 @@ Cancel a scheduled Twitch segment. After the next sync the corresponding Discord
 
 ### Step 7 — Test with multiple channels
 
-Add a second channel pair:
+Add a second channel pair in Portainer stack environment variables:
 
 ```
-TWITCH_CHANNEL_1_USERNAME    = anotherchannel
-TWITCH_CHANNEL_1_DISPLAYNAME = Another Channel
+Twitch__Channels__1__Username    = mortys_welt
+Twitch__Channels__1__DisplayName = MORTYS WELT
 ```
 
-Update the stack in Portainer and redeploy. The startup log should now read `TwitchService initialized with 2 channel(s): Some Channel, Another Channel`.
+Redeploy the stack. The startup log should now read `TwitchService initialized with 2 channel(s): MORTYS WELT, MORTYS WELT`.
 
 ---
 
@@ -218,7 +228,7 @@ Copy `appsettings.example.json` to `appsettings.Development.json` (gitignored) a
     "ClientId": "...",
     "ClientSecret": "...",
     "Channels": [
-      { "Username": "somechannel", "DisplayName": "Some Channel" }
+      { "Username": "mortys_welt", "DisplayName": "MORTYS WELT" }
     ]
   }
 }
