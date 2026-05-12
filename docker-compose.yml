@@ -35,13 +35,13 @@ services:
       - Twitch__Channels__4__Username
       - Twitch__Channels__4__DisplayName
 
-      # ── Discord event language (controls labels inside Discord events) ──
-      # "en" = English (default), "de" = German
-      # - Discord__EventLanguage=en
-
-      # ── Optional sync overrides (defaults: 30 min, 14 days) ──
-      # - Sync__IntervalMinutes=30
-      # - Sync__LookaheadDays=14
+      # ── Optional overrides — set in Portainer to activate, omit to use defaults ──
+      # Discord__EventLanguage  → "en" (default) or "de"
+      # Sync__IntervalMinutes   → default 30
+      # Sync__LookaheadDays     → default 14
+      - Discord__EventLanguage
+      - Sync__IntervalMinutes
+      - Sync__LookaheadDays
 
     # ── Logging ───────────────────────────────────────────────────────────────
     logging:
