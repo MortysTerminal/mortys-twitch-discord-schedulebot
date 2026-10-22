@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using mortys_twitch_discord_schedulebot.Models;
+using mortys_twitch_discord_schedulebot.Sync;
 using TwitchLib.Api;
 using TwitchLib.Api.Helix.Models.Schedule;
 
@@ -12,10 +13,12 @@ namespace mortys_twitch_discord_schedulebot.Services
         private readonly List<TwitchChannelConfig> _channels;
         private readonly ILogger<TwitchService> _logger;
         private readonly int _lookaheadDays;
+        private readonly TimeProvider _timeProvider;
 
-        public TwitchService(IConfiguration configuration, ILogger<TwitchService> logger)
+        public TwitchService(IConfiguration configuration, ILogger<TwitchService> logger, TimeProvider timeProvider)
         {
             _logger = logger;
+            _timeProvider = timeProvider;
 
             var clientId = configuration["Twitch:ClientId"]
                 ?? throw new InvalidOperationException("Twitch:ClientId is missing from configuration.");
@@ -128,11 +131,11 @@ namespace mortys_twitch_discord_schedulebot.Services
                     return entries;
                 }
 
-                var cutoff = DateTimeOffset.UtcNow.AddDays(_lookaheadDays);
+                var now = _timeProvider.GetUtcNow();
 
                 foreach (var segment in scheduleResponse.Schedule.Segments)
                 {
-                    if (segment.StartTime <= DateTimeOffset.UtcNow || segment.StartTime > cutoff)
+                    if (!ScheduleWindow.Includes(segment.StartTime, now, _lookaheadDays))
                         continue;
 
                     entries.Add(new StreamScheduleEntry

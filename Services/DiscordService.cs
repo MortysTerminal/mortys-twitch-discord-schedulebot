@@ -3,6 +3,7 @@ using Discord.Rest;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using mortys_twitch_discord_schedulebot.Models;
+using mortys_twitch_discord_schedulebot.Sync;
 
 namespace mortys_twitch_discord_schedulebot.Services
 {
@@ -12,9 +13,9 @@ namespace mortys_twitch_discord_schedulebot.Services
         private readonly ulong _guildId;
         private readonly ILogger<DiscordService> _logger;
         private readonly string _configuration_token;
-        // Controls the language used in Discord event content (labels, fallback strings).
-        // Set Discord__EventLanguage=de for German, defaults to English.
-        private readonly bool _germanEvents;
+        // Decides what to create, update and delete; this service only executes the plan.
+        // Event language: set Discord__EventLanguage=de for German, defaults to English.
+        private readonly EventPlanner _planner;
 
         public DiscordService(IConfiguration configuration, ILogger<DiscordService> logger)
         {
@@ -31,14 +32,14 @@ namespace mortys_twitch_discord_schedulebot.Services
             if (!ulong.TryParse(guildIdRaw, out _guildId))
                 throw new InvalidOperationException("Discord:GuildId is invalid — must be a numeric value.");
 
-            var lang = configuration["Discord:EventLanguage"] ?? "en";
-            _germanEvents = lang.Equals("de", StringComparison.OrdinalIgnoreCase);
+            var formatter = EventFormatter.FromLanguage(configuration["Discord:EventLanguage"] ?? "en");
+            _planner = new EventPlanner(formatter);
 
             _client = new DiscordRestClient();
 
             _logger.LogInformation(
                 "DiscordService initialized (event language: {Language}).",
-                _germanEvents ? "de" : "en"
+                formatter.IsGerman ? "de" : "en"
             );
         }
 
@@ -60,174 +61,86 @@ namespace mortys_twitch_discord_schedulebot.Services
                 return;
             }
 
-            var existingEvents = (await guild.GetEventsAsync()).ToList();
+            var guildEvents = (await guild.GetEventsAsync()).ToDictionary(e => e.Id);
 
             _logger.LogInformation(
                 "Found {ScheduleCount} Twitch entries and {EventCount} existing Discord events.",
                 scheduleEntries.Count,
-                existingEvents.Count
+                guildEvents.Count
             );
 
-            var processedEventIds = new HashSet<ulong>();
+            var snapshots = guildEvents.Values
+                .Select(e => new ExistingEvent(e.Id, e.Name, e.Description, e.StartTime, e.EndTime, e.Location))
+                .ToList();
 
-            foreach (var entry in scheduleEntries)
+            var plan = _planner.Plan(scheduleEntries, snapshots);
+
+            foreach (var desired in plan.Creates)
+                await CreateEventAsync(guild, desired);
+
+            foreach (var update in plan.Updates)
+                await UpdateEventAsync(guildEvents[update.Existing.Id], update.Desired);
+
+            foreach (var unchanged in plan.Unchanged)
+                _logger.LogInformation("Event '{Name}' is up to date — no changes needed.", unchanged.Name);
+
+            foreach (var obsolete in plan.Deletes)
             {
-                var matchingEvent = existingEvents.FirstOrDefault(e =>
-                    e.Description != null &&
-                    e.Description.Contains(entry.TwitchSegmentId)
+                _logger.LogInformation(
+                    "Discord event '{Name}' is no longer in the schedule — deleting.",
+                    obsolete.Name
                 );
-
-                if (matchingEvent == null)
-                {
-                    var createdEvent = await CreateEventAsync(guild, entry);
-                    if (createdEvent != null)
-                        processedEventIds.Add(createdEvent.Id);
-                }
-                else
-                {
-                    await UpdateEventIfChangedAsync(matchingEvent, entry);
-                    processedEventIds.Add(matchingEvent.Id);
-                }
-            }
-
-            foreach (var existingEvent in existingEvents)
-            {
-                if (existingEvent.Description == null) continue;
-
-                if (!processedEventIds.Contains(existingEvent.Id) && IsOurBotEvent(existingEvent, scheduleEntries))
-                {
-                    _logger.LogInformation(
-                        "Discord event '{Name}' is no longer in the schedule — deleting.",
-                        existingEvent.Name
-                    );
-                    await existingEvent.DeleteAsync();
-                }
+                await guildEvents[obsolete.Id].DeleteAsync();
             }
 
             _logger.LogInformation("Discord event synchronization complete.");
         }
 
-        private async Task<RestGuildEvent?> CreateEventAsync(RestGuild guild, StreamScheduleEntry entry)
+        private async Task CreateEventAsync(RestGuild guild, DesiredEvent desired)
         {
             try
             {
-                var endTime = (entry.EndTime.HasValue && entry.EndTime.Value > entry.StartTime)
-                    ? entry.EndTime.Value
-                    : entry.StartTime.AddHours(3);
-
-                var eventName = BuildEventName(entry);
-                var description = BuildEventDescription(entry);
-
-                var guildEvent = await guild.CreateEventAsync(
-                    name: eventName,
-                    startTime: entry.StartTime,
+                await guild.CreateEventAsync(
+                    name: desired.Name,
+                    startTime: desired.StartTime,
                     type: GuildScheduledEventType.External,
                     privacyLevel: GuildScheduledEventPrivacyLevel.Private,
-                    description: description,
-                    endTime: endTime,
-                    location: entry.ChannelUrl
+                    description: desired.Description,
+                    endTime: desired.EndTime,
+                    location: desired.Location
                 );
 
                 _logger.LogInformation(
                     "Discord event created: '{Name}' on {Date}",
-                    eventName,
-                    entry.StartTime.ToString("yyyy-MM-dd HH:mm")
+                    desired.Name,
+                    desired.StartTime.ToString("yyyy-MM-dd HH:mm")
                 );
-
-                return guildEvent;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to create Discord event for '{Title}'.", entry.Title);
-                return null;
+                _logger.LogError(ex, "Failed to create Discord event for '{Title}'.", desired.Entry.Title);
             }
         }
 
-        private async Task UpdateEventIfChangedAsync(RestGuildEvent existingEvent, StreamScheduleEntry entry)
+        private async Task UpdateEventAsync(RestGuildEvent existingEvent, DesiredEvent desired)
         {
-            var expectedName = BuildEventName(entry);
-            var expectedDescription = BuildEventDescription(entry);
-            var expectedEndTime = (entry.EndTime.HasValue && entry.EndTime.Value > entry.StartTime)
-                ? entry.EndTime.Value
-                : entry.StartTime.AddHours(3);
-
-            bool hasChanged =
-                existingEvent.Name != expectedName ||
-                existingEvent.StartTime != entry.StartTime ||
-                existingEvent.Description != expectedDescription;
-
-            if (!hasChanged)
-            {
-                _logger.LogInformation("Event '{Name}' is up to date — no changes needed.", existingEvent.Name);
-                return;
-            }
-
             try
             {
                 await existingEvent.ModifyAsync(props =>
                 {
-                    props.Name = expectedName;
-                    props.StartTime = entry.StartTime;
-                    props.EndTime = expectedEndTime;
-                    props.Description = expectedDescription;
-                    props.Location = entry.ChannelUrl;
+                    props.Name = desired.Name;
+                    props.StartTime = desired.StartTime;
+                    props.EndTime = desired.EndTime;
+                    props.Description = desired.Description;
+                    props.Location = desired.Location;
                 });
 
-                _logger.LogInformation("Discord event updated: '{Name}'", expectedName);
+                _logger.LogInformation("Discord event updated: '{Name}'", desired.Name);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to update event '{Name}'.", existingEvent.Name);
             }
-        }
-
-        // Builds the Discord event title, applying a language-specific fallback when Twitch has no title set.
-        private string BuildEventName(StreamScheduleEntry entry)
-        {
-            var title = string.IsNullOrWhiteSpace(entry.Title)
-                ? (_germanEvents ? $"Stream von {entry.StreamerDisplayName}" : $"Stream by {entry.StreamerDisplayName}")
-                : entry.Title;
-
-            var eventName = $"{entry.StreamerDisplayName} – {title}";
-
-            return eventName.Length > 100 ? eventName[..97] + "..." : eventName;
-        }
-
-        // Builds the Discord event description with language-specific labels.
-        // The hidden [twitch-segment-id:...] tag at the end is used to identify bot-managed events.
-        private string BuildEventDescription(StreamScheduleEntry entry)
-        {
-            var berlinZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin");
-            var localStart = TimeZoneInfo.ConvertTime(entry.StartTime, berlinZone);
-
-            var category = string.IsNullOrEmpty(entry.CategoryName)
-                ? (_germanEvents ? "Keine Kategorie" : "No Category")
-                : entry.CategoryName;
-
-            if (_germanEvents)
-            {
-                return $"""
-                        🎬 Inhalt: {category}
-                        📺 Kanal: {entry.ChannelUrl}
-                        🕐 Start: {localStart:dd.MM.yyyy HH:mm} Uhr
-
-                        [twitch-segment-id:{entry.TwitchSegmentId}]
-                        """;
-            }
-
-            return $"""
-                    🎬 Content: {category}
-                    📺 Channel: {entry.ChannelUrl}
-                    🕐 Start: {localStart:dd.MM.yyyy HH:mm}
-
-                    [twitch-segment-id:{entry.TwitchSegmentId}]
-                    """;
-        }
-
-        private static bool IsOurBotEvent(RestGuildEvent guildEvent, List<StreamScheduleEntry> allEntries)
-        {
-            if (guildEvent.Description == null) return false;
-            return guildEvent.Description.Contains("[twitch-segment-id:");
         }
 
         public async ValueTask DisposeAsync()

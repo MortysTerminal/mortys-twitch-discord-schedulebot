@@ -3,8 +3,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using mortys_twitch_discord_schedulebot.Services;
 using Serilog;
-using TwitchLib.Api.Helix.Models.Extensions.ReleasedExtensions;
-using TwitchLib.Api.ThirdParty.ModLookup;
 
 // Bootstrap logger active before the host starts (catches startup failures)
 Log.Logger = new LoggerConfiguration()
@@ -41,6 +39,7 @@ try
         // ── Services ───────────────────────────────────────────────────────────
         .ConfigureServices((context, services) =>
         {
+            services.AddSingleton(TimeProvider.System);
             services.AddSingleton<TwitchService>();
             services.AddSingleton<DiscordService>();
             services.AddHostedService<SyncService>();

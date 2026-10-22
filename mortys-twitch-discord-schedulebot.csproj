@@ -6,11 +6,9 @@
     <RootNamespace>mortys_twitch_discord_schedulebot</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- The test project lives below the project root; keep its files out of this project. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);tests/**</DefaultItemExcludes>
   </PropertyGroup>
-
-  <ItemGroup>
-
-  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Discord.Net" Version="3.20.2" />

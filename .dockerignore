@@ -19,3 +19,6 @@ appsettings.Development.json
 
 # Documentation
 README.md
+
+# Tests are not part of the image
+tests/
