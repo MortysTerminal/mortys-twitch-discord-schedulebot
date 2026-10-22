@@ -14,6 +14,10 @@ namespace mortys_twitch_discord_schedulebot.Sync
     /// configured: only if every configured channel was fetched successfully this cycle.</item>
     /// </list>
     /// Otherwise the event is kept and reported as protected.
+    /// <para>
+    /// Bot events whose start time has passed are never updated or deleted: Discord completes external events
+    /// at their end time on its own.
+    /// </para>
     /// </remarks>
     public class EventPlanner
     {
@@ -24,12 +28,13 @@ namespace mortys_twitch_discord_schedulebot.Sync
             _formatter = formatter;
         }
 
-        public SyncPlan Plan(IReadOnlyList<ChannelSchedule> schedules, IReadOnlyList<ExistingEvent> existingEvents)
+        public SyncPlan Plan(IReadOnlyList<ChannelSchedule> schedules, IReadOnlyList<ExistingEvent> existingEvents, DateTimeOffset now)
         {
             var creates = new List<DesiredEvent>();
             var updates = new List<EventUpdate>();
             var unchanged = new List<ExistingEvent>();
-            var matchedEventIds = new HashSet<ulong>();
+            var started = existingEvents.Where(e => IsBotEvent(e) && e.StartTime <= now).ToList();
+            var matchedEventIds = started.Select(e => e.Id).ToHashSet();
 
             foreach (var entry in schedules.Where(s => s.Succeeded).SelectMany(s => s.Entries))
             {
@@ -46,6 +51,9 @@ namespace mortys_twitch_discord_schedulebot.Sync
                     creates.Add(desired);
                     continue;
                 }
+
+                if (started.Contains(matchingEvent))
+                    continue;
 
                 matchedEventIds.Add(matchingEvent.Id);
 
@@ -73,7 +81,7 @@ namespace mortys_twitch_discord_schedulebot.Sync
                 (safeToDelete ? deletes : protectedEvents).Add(existing);
             }
 
-            return new SyncPlan(creates, updates, unchanged, deletes, protectedEvents);
+            return new SyncPlan(creates, updates, unchanged, deletes, protectedEvents, started);
         }
 
         public DesiredEvent ToDesiredEvent(StreamScheduleEntry entry) =>
@@ -90,10 +98,11 @@ namespace mortys_twitch_discord_schedulebot.Sync
             existingEvent.Description != null &&
             existingEvent.Description.Contains(EventFormatter.SegmentTagPrefix);
 
-        // Only name, start and description are compared; any difference rewrites all fields.
         private static bool HasChanged(ExistingEvent existing, DesiredEvent desired) =>
             existing.Name != desired.Name ||
             existing.StartTime != desired.StartTime ||
-            existing.Description != desired.Description;
+            existing.EndTime != desired.EndTime ||
+            existing.Description != desired.Description ||
+            existing.Location != desired.Location;
     }
 }

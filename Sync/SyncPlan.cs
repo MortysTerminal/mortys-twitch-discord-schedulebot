@@ -31,12 +31,14 @@ namespace mortys_twitch_discord_schedulebot.Sync
     /// <summary>
     /// What one sync cycle should do on Discord. <see cref="Protected"/> lists bot events that are not in the
     /// fetched schedules but are kept because their channel could not be fetched successfully.
+    /// <see cref="Started"/> lists bot events whose start time has passed; they are left for Discord to complete.
     /// </summary>
     public record SyncPlan(
         IReadOnlyList<DesiredEvent> Creates,
         IReadOnlyList<EventUpdate> Updates,
         IReadOnlyList<ExistingEvent> Unchanged,
         IReadOnlyList<ExistingEvent> Deletes,
-        IReadOnlyList<ExistingEvent> Protected
+        IReadOnlyList<ExistingEvent> Protected,
+        IReadOnlyList<ExistingEvent> Started
     );
 }

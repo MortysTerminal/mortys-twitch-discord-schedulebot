@@ -15,10 +15,12 @@ namespace mortys_twitch_discord_schedulebot.Services
         // Decides what to create, update and delete; this service only executes the plan.
         // Event language: set Discord__EventLanguage=de for German, defaults to English.
         private readonly EventPlanner _planner;
+        private readonly TimeProvider _timeProvider;
 
-        public DiscordService(IConfiguration configuration, ILogger<DiscordService> logger)
+        public DiscordService(IConfiguration configuration, ILogger<DiscordService> logger, TimeProvider timeProvider)
         {
             _logger = logger;
+            _timeProvider = timeProvider;
 
             var token = configuration["Discord:BotToken"]
                 ?? throw new InvalidOperationException("Discord:BotToken is missing from configuration.");
@@ -72,7 +74,7 @@ namespace mortys_twitch_discord_schedulebot.Services
                 .Select(e => new ExistingEvent(e.Id, e.Name, e.Description, e.StartTime, e.EndTime, e.Location))
                 .ToList();
 
-            var plan = _planner.Plan(schedules, snapshots);
+            var plan = _planner.Plan(schedules, snapshots, _timeProvider.GetUtcNow());
 
             foreach (var desired in plan.Creates)
                 await CreateEventAsync(guild, desired);
@@ -91,6 +93,9 @@ namespace mortys_twitch_discord_schedulebot.Services
                 );
                 await guildEvents[obsolete.Id].DeleteAsync();
             }
+
+            foreach (var running in plan.Started)
+                _logger.LogInformation("Event '{Name}' has already started — leaving it to Discord.", running.Name);
 
             foreach (var kept in plan.Protected)
             {

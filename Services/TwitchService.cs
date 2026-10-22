@@ -134,33 +134,61 @@ namespace mortys_twitch_discord_schedulebot.Services
 
                 var userId = userResponse.Users[0].Id;
 
-                var scheduleResponse = await _twitchApi.Helix.Schedule.GetChannelStreamScheduleAsync(
-                    broadcasterId: userId,
-                    first: 10
-                );
+                var now = _timeProvider.GetUtcNow();
+                var cutoff = now.AddDays(_lookaheadDays);
+                var segments = new List<TwitchSegment>();
+                VacationWindow? vacation = null;
+                string? cursor = null;
 
-                if (scheduleResponse?.Schedule?.Segments == null)
+                // Page through the schedule until the look-ahead window is covered.
+                for (var page = 1; page <= SchedulePaging.MaxPages; page++)
                 {
-                    _logger.LogInformation("Channel '{Channel}' has no scheduled segments.", channel.Username);
-                    return ChannelSchedule.Success(channel.Username, entries);
+                    var scheduleResponse = await _twitchApi.Helix.Schedule.GetChannelStreamScheduleAsync(
+                        broadcasterId: userId,
+                        first: SchedulePaging.PageSize,
+                        after: cursor
+                    );
+
+                    var schedule = scheduleResponse?.Schedule;
+                    if (schedule?.Segments == null)
+                        break;
+
+                    if (schedule.Vacation != null)
+                        vacation = new VacationWindow(ToUtc(schedule.Vacation.StartTime), ToUtc(schedule.Vacation.EndTime));
+
+                    var pageSegments = schedule.Segments.Select(ToTwitchSegment).ToList();
+                    segments.AddRange(pageSegments);
+
+                    cursor = scheduleResponse!.Pagination?.Cursor;
+                    if (!SchedulePaging.NeedsNextPage(pageSegments, cursor, cutoff))
+                        break;
                 }
 
-                var now = _timeProvider.GetUtcNow();
+                var canceled = segments.Count(s => s.IsCanceled);
+                if (canceled > 0)
+                    _logger.LogInformation("Channel '{Channel}': skipping {Count} canceled segment(s).", channel.Username, canceled);
 
-                foreach (var segment in scheduleResponse.Schedule.Segments)
+                if (vacation != null)
                 {
-                    if (!ScheduleWindow.Includes(segment.StartTime, now, _lookaheadDays))
-                        continue;
+                    _logger.LogInformation(
+                        "Channel '{Channel}' is on vacation from {Start:yyyy-MM-dd} to {End:yyyy-MM-dd}; segments in that period are skipped.",
+                        channel.Username,
+                        vacation.StartTime,
+                        vacation.EndTime
+                    );
+                }
 
+                foreach (var segment in SegmentSelector.Select(segments, vacation, now, _lookaheadDays))
+                {
                     entries.Add(new StreamScheduleEntry
                     {
                         TwitchSegmentId = segment.Id,
                         StreamerUsername = channel.Username,
                         StreamerDisplayName = channel.DisplayName,
                         ChannelUrl = channel.ChannelUrl,
-                        // Empty title and category are resolved to language-specific fallbacks in DiscordService
-                        Title = segment.Title ?? string.Empty,
-                        CategoryName = segment.Category?.Name ?? string.Empty,
+                        // Empty title and category are resolved to language-specific fallbacks in EventFormatter
+                        Title = segment.Title,
+                        CategoryName = segment.CategoryName,
                         StartTime = segment.StartTime,
                         EndTime = segment.EndTime
                     });
@@ -180,5 +208,22 @@ namespace mortys_twitch_discord_schedulebot.Services
 
             return ChannelSchedule.Success(channel.Username, entries);
         }
+
+        private static TwitchSegment ToTwitchSegment(Segment segment) =>
+            new(
+                Id: segment.Id,
+                Title: segment.Title ?? string.Empty,
+                CategoryName: segment.Category?.Name ?? string.Empty,
+                StartTime: ToUtc(segment.StartTime),
+                // TwitchLib leaves EndTime at DateTime.MinValue when Twitch sends no end time.
+                EndTime: segment.EndTime == default ? null : ToUtc(segment.EndTime),
+                IsCanceled: segment.CanceledUntil.HasValue
+            );
+
+        // Twitch sends UTC timestamps; treat an unspecified kind as UTC instead of local time.
+        private static DateTimeOffset ToUtc(DateTime time) =>
+            time.Kind == DateTimeKind.Local
+                ? new DateTimeOffset(time.ToUniversalTime())
+                : new DateTimeOffset(DateTime.SpecifyKind(time, DateTimeKind.Utc));
     }
 }

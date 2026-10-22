@@ -7,6 +7,9 @@ namespace mortys_twitch_discord_schedulebot.Tests
     {
         public static readonly TimeZoneInfo Berlin = TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin");
 
+        // "Now" for planner tests: one day before the default entry start.
+        public static readonly DateTimeOffset Now = new(2026, 6, 30, 18, 0, 0, TimeSpan.Zero);
+
         public static EventFormatter English => new(germanEvents: false, displayTimeZone: Berlin);
         public static EventFormatter German => new(germanEvents: true, displayTimeZone: Berlin);
 
