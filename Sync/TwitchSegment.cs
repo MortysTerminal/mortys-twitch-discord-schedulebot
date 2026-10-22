@@ -25,9 +25,18 @@ namespace mortys_twitch_discord_schedulebot.Sync
         /// <remarks>
         /// Not documented by Twitch: segment IDs are base64-encoded JSON such as
         /// <c>{"segmentID":"e4acc724-…","isoYear":2021,"isoWeek":26}</c>, where <c>segmentID</c> is the same for every
-        /// week of a series. If the ID cannot be decoded, the segment counts as its own series, so nothing is hidden.
+        /// week of a series. If the ID cannot be decoded, the fallback follows Twitch's documented definition of a
+        /// recurring segment (same weekday and time every week) plus the exact title, compared in UTC. Around a
+        /// daylight-saving switch the fallback may show two occurrences of one series for that week.
+        /// One-time segments are never merged.
         /// </remarks>
-        public string SeriesKey => IsRecurring ? TryDecodeSeriesId(Id) ?? Id : Id;
+        public string SeriesKey => IsRecurring ? TryDecodeSeriesId(Id) ?? FallbackSeriesKey() : Id;
+
+        private string FallbackSeriesKey()
+        {
+            var start = StartTime.UtcDateTime;
+            return $"recurring:{start.DayOfWeek}|{start:HH:mm}|{Title}";
+        }
 
         private static string? TryDecodeSeriesId(string segmentId)
         {

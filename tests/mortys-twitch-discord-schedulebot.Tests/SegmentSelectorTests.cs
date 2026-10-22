@@ -66,13 +66,53 @@ namespace mortys_twitch_discord_schedulebot.Tests
             Assert.Equal(["a", "b"], SelectIds([Segment("a", Now.AddDays(1)), Segment("b", Now.AddDays(8))]));
         }
 
-        [Fact]
-        public void Recurring_segment_with_an_undecodable_id_counts_as_its_own_series()
-        {
-            var first = new TwitchSegment("not-base64!", "t", "c", Now.AddDays(1), null, false, IsRecurring: true);
-            var second = new TwitchSegment("also-opaque", "t", "c", Now.AddDays(8), null, false, IsRecurring: true);
+        // Recurring segment whose ID does not decode (e.g. if Twitch changes the ID format).
+        private static TwitchSegment Opaque(string id, string title, DateTimeOffset start) =>
+            new(id, title, "c", start, null, false, IsRecurring: true);
 
-            Assert.Equal(["not-base64!", "also-opaque"], SelectIds([first, second]));
+        [Fact]
+        public void Undecodable_ids_fall_back_to_title_weekday_and_time()
+        {
+            var thisWeek = Opaque("not-base64!", "Minecraft Monday", Now.AddDays(1));
+            var nextWeek = Opaque("also-opaque", "Minecraft Monday", Now.AddDays(8));
+
+            Assert.Equal(["not-base64!"], SelectIds([thisWeek, nextWeek]));
+        }
+
+        [Fact]
+        public void Fallback_keeps_different_titles_apart()
+        {
+            var first = Opaque("x1", "Minecraft Monday", Now.AddDays(1));
+            var second = Opaque("x2", "Minecraft Monday – Finale", Now.AddDays(8));
+
+            Assert.Equal(["x1", "x2"], SelectIds([first, second]));
+        }
+
+        [Fact]
+        public void Fallback_keeps_different_times_apart()
+        {
+            var first = Opaque("x1", "Weekly", Now.AddDays(1));
+            var second = Opaque("x2", "Weekly", Now.AddDays(8).AddHours(1));
+
+            Assert.Equal(["x1", "x2"], SelectIds([first, second]));
+        }
+
+        [Fact]
+        public void Fallback_keeps_different_weekdays_apart()
+        {
+            var first = Opaque("x1", "Weekly", Now.AddDays(1));
+            var second = Opaque("x2", "Weekly", Now.AddDays(2));
+
+            Assert.Equal(["x1", "x2"], SelectIds([first, second]));
+        }
+
+        [Fact]
+        public void Fallback_is_only_used_for_recurring_segments()
+        {
+            var first = new TwitchSegment("x1", "Weekly", "c", Now.AddDays(1), null, false);
+            var second = new TwitchSegment("x2", "Weekly", "c", Now.AddDays(8), null, false);
+
+            Assert.Equal(["x1", "x2"], SelectIds([first, second]));
         }
 
         [Fact]
