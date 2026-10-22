@@ -4,6 +4,16 @@ services:
     container_name: mortys-schedulebot
     restart: unless-stopped
 
+    # ── Hardening ─────────────────────────────────────────────────────────────
+    # The bot needs no writable files, no extra Linux capabilities and no ports.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
     environment:
       # ── Secrets (set in Portainer stack environment variables) ──
       - Discord__BotToken=${DISCORD_BOT_TOKEN}

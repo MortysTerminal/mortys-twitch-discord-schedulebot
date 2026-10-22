@@ -31,7 +31,20 @@ namespace mortys_twitch_discord_schedulebot.Services
                 _intervalMinutes
             );
 
-            await _discordService.LoginAsync();
+            try
+            {
+                await _discordService.LoginAsync();
+            }
+            catch (Exception ex)
+            {
+                // Without a Discord session nothing can be synced; stop the host so the container restarts.
+                _logger.LogCritical(
+                    ex,
+                    "Discord login failed — check Discord__BotToken. The bot stops and the container will be restarted."
+                );
+                Environment.ExitCode = 1;
+                throw;
+            }
 
             await RunSyncAsync();
 
@@ -48,14 +61,14 @@ namespace mortys_twitch_discord_schedulebot.Services
 
                     await RunSyncAsync();
                 }
-                catch (TaskCanceledException)
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
                     break;
                 }
                 catch (Exception ex)
                 {
+                    // The next loop iteration waits the regular interval before retrying.
                     _logger.LogError(ex, "Unexpected error in SyncService. Retrying in {Interval} minute(s).", _intervalMinutes);
-                    await Task.Delay(TimeSpan.FromMinutes(_intervalMinutes), stoppingToken);
                 }
             }
 

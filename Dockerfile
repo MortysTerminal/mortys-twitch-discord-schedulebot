@@ -1,26 +1,23 @@
-﻿# ── Phase 1: Build ────────────────────────────────────────────────────────────
+# ── Stage 1: build ────────────────────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 WORKDIR /src
 
-# .csproj kopieren und Abhängigkeiten laden
+# Restore first so the dependency layer is cached between code changes
 COPY ["mortys-twitch-discord-schedulebot.csproj", "."]
 RUN dotnet restore "mortys-twitch-discord-schedulebot.csproj"
 
-# Restlichen Code kopieren und kompilieren
 COPY . .
-RUN dotnet publish "mortys-twitch-discord-schedulebot.csproj" -c Release -o /app/publish
+RUN dotnet publish "mortys-twitch-discord-schedulebot.csproj" -c Release --no-restore -o /app/publish
 
-# ── Phase 2: Runtime ──────────────────────────────────────────────────────────
+# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+# The runtime image already ships tzdata (needed for Europe/Berlin) and a non-root "app" user.
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
 
 WORKDIR /app
 
-# Zeitzonendaten installieren (wichtig für Europe/Berlin Konvertierung)
-RUN apt-get update && apt-get install -y tzdata && rm -rf /var/lib/apt/lists/*
-
-# Kompilierte Dateien aus Build-Phase kopieren
 COPY --from=build /app/publish .
 
-# Bot starten
+USER $APP_UID
+
 ENTRYPOINT ["dotnet", "mortys-twitch-discord-schedulebot.dll"]

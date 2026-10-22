@@ -16,6 +16,9 @@ obj/
 # appsettings.json (safe defaults) IS included intentionally.
 appsettings.Production.json
 appsettings.Development.json
+.env
+.env.*
+*.env
 
 # Documentation
 README.md

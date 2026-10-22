@@ -21,7 +21,7 @@ try
         {
             config
                 .SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+                .AddJsonFile("appsettings.json", optional: true)
                 .AddJsonFile($"appsettings.{context.HostingEnvironment.EnvironmentName}.json", optional: true)
                 .AddEnvironmentVariables();
         })
@@ -52,6 +52,7 @@ try
 catch (Exception ex)
 {
     Log.Fatal(ex, "Bot failed to start.");
+    Environment.ExitCode = 1;
 }
 finally
 {
