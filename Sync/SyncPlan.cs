@@ -29,12 +29,14 @@ namespace mortys_twitch_discord_schedulebot.Sync
     public record EventUpdate(ExistingEvent Existing, DesiredEvent Desired);
 
     /// <summary>
-    /// What one sync cycle should do on Discord.
+    /// What one sync cycle should do on Discord. <see cref="Protected"/> lists bot events that are not in the
+    /// fetched schedules but are kept because their channel could not be fetched successfully.
     /// </summary>
     public record SyncPlan(
         IReadOnlyList<DesiredEvent> Creates,
         IReadOnlyList<EventUpdate> Updates,
         IReadOnlyList<ExistingEvent> Unchanged,
-        IReadOnlyList<ExistingEvent> Deletes
+        IReadOnlyList<ExistingEvent> Deletes,
+        IReadOnlyList<ExistingEvent> Protected
     );
 }

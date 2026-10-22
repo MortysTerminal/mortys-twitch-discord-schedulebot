@@ -11,6 +11,10 @@ namespace mortys_twitch_discord_schedulebot.Sync
         // Marks bot-managed events; the segment ID follows the colon.
         public const string SegmentTagPrefix = "[twitch-segment-id:";
 
+        // Names the Twitch channel (login) an event belongs to, so deletions can be scoped per channel.
+        // Events created before this tag existed don't have it.
+        public const string ChannelTagPrefix = "[twitch-channel:";
+
         // Discord limits event names to 100 characters.
         private const int MaxNameLength = 100;
 
@@ -51,7 +55,7 @@ namespace mortys_twitch_discord_schedulebot.Sync
         }
 
         // Builds the Discord event description with language-specific labels.
-        // The hidden [twitch-segment-id:...] tag at the end is used to identify bot-managed events.
+        // The tags on the last line identify bot-managed events and the channel they belong to.
         public string BuildDescription(StreamScheduleEntry entry)
         {
             var localStart = TimeZoneInfo.ConvertTime(entry.StartTime, _displayTimeZone);
@@ -60,6 +64,8 @@ namespace mortys_twitch_discord_schedulebot.Sync
                 ? (_germanEvents ? "Keine Kategorie" : "No Category")
                 : entry.CategoryName;
 
+            var tags = $"{SegmentTagPrefix}{entry.TwitchSegmentId}] {ChannelTagPrefix}{NormalizeLogin(entry.StreamerUsername)}]";
+
             if (_germanEvents)
             {
                 return $"""
@@ -67,7 +73,7 @@ namespace mortys_twitch_discord_schedulebot.Sync
                         📺 Kanal: {entry.ChannelUrl}
                         🕐 Start: {localStart:dd.MM.yyyy HH:mm} Uhr
 
-                        {SegmentTagPrefix}{entry.TwitchSegmentId}]
+                        {tags}
                         """;
             }
 
@@ -76,9 +82,29 @@ namespace mortys_twitch_discord_schedulebot.Sync
                     📺 Channel: {entry.ChannelUrl}
                     🕐 Start: {localStart:dd.MM.yyyy HH:mm}
 
-                    {SegmentTagPrefix}{entry.TwitchSegmentId}]
+                    {tags}
                     """;
         }
+
+        /// <summary>
+        /// Reads the channel tag from an event description; null when the event has none (created before the tag existed).
+        /// </summary>
+        public static string? ReadChannelTag(string? description)
+        {
+            if (description == null) return null;
+
+            var start = description.IndexOf(ChannelTagPrefix, StringComparison.Ordinal);
+            if (start < 0) return null;
+
+            start += ChannelTagPrefix.Length;
+            var end = description.IndexOf(']', start);
+            if (end <= start) return null;
+
+            return NormalizeLogin(description[start..end]);
+        }
+
+        // Twitch logins are case-insensitive; tags and comparisons use lower case.
+        public static string NormalizeLogin(string login) => login.Trim().ToLowerInvariant();
 
         public static DateTimeOffset BuildEndTime(StreamScheduleEntry entry) =>
             entry.EndTime.HasValue && entry.EndTime.Value > entry.StartTime

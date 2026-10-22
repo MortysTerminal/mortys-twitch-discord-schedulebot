@@ -51,7 +51,7 @@ namespace mortys_twitch_discord_schedulebot.Tests
                 "📺 Channel: https://www.twitch.tv/somechannel\n" +
                 "🕐 Start: 01.07.2026 20:00\n" +
                 "\n" +
-                "[twitch-segment-id:abc123]",
+                "[twitch-segment-id:abc123] [twitch-channel:somechannel]",
                 description);
         }
 
@@ -65,7 +65,7 @@ namespace mortys_twitch_discord_schedulebot.Tests
                 "📺 Kanal: https://www.twitch.tv/somechannel\n" +
                 "🕐 Start: 01.07.2026 20:00 Uhr\n" +
                 "\n" +
-                "[twitch-segment-id:abc123]",
+                "[twitch-segment-id:abc123] [twitch-channel:somechannel]",
                 description);
         }
 
@@ -118,6 +118,26 @@ namespace mortys_twitch_discord_schedulebot.Tests
             var start = new DateTimeOffset(2026, 7, 1, 18, 0, 0, TimeSpan.Zero);
 
             Assert.Equal(start.AddHours(3), EventFormatter.BuildEndTime(Entry(start: start, end: start)));
+        }
+
+        [Fact]
+        public void Channel_tag_uses_the_lower_case_login()
+        {
+            var description = English.BuildDescription(Entry(channel: "SomeChannel"));
+
+            Assert.EndsWith("[twitch-channel:somechannel]", description);
+        }
+
+        [Theory]
+        [InlineData("text\n\n[twitch-segment-id:x] [twitch-channel:somechannel]", "somechannel")]
+        [InlineData("[twitch-channel:SomeChannel]", "somechannel")]
+        [InlineData("text\n\n[twitch-segment-id:x]", null)]
+        [InlineData("[twitch-channel:]", null)]
+        [InlineData("[twitch-channel:unterminated", null)]
+        [InlineData(null, null)]
+        public void Channel_tag_is_read_back_from_descriptions(string? description, string? expected)
+        {
+            Assert.Equal(expected, EventFormatter.ReadChannelTag(description));
         }
 
         [Theory]

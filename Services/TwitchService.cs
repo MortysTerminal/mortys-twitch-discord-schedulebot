@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using mortys_twitch_discord_schedulebot.Models;
 using mortys_twitch_discord_schedulebot.Sync;
 using TwitchLib.Api;
+using TwitchLib.Api.Core.Exceptions;
 using TwitchLib.Api.Helix.Models.Schedule;
 
 namespace mortys_twitch_discord_schedulebot.Services
@@ -64,9 +65,11 @@ namespace mortys_twitch_discord_schedulebot.Services
             );
         }
 
-        public async Task<List<StreamScheduleEntry>> GetAllSchedulesAsync()
+        // Throws when authentication fails, so the caller skips the whole cycle.
+        // Per-channel failures are returned as failed results instead of throwing.
+        public async Task<List<ChannelSchedule>> GetAllSchedulesAsync()
         {
-            var allEntries = new List<StreamScheduleEntry>();
+            var schedules = new List<ChannelSchedule>();
 
             await AuthenticateAsync();
 
@@ -74,17 +77,27 @@ namespace mortys_twitch_discord_schedulebot.Services
             {
                 _logger.LogInformation("Fetching schedule for channel: {Channel}", channel.Username);
 
-                var entries = await GetScheduleForChannelAsync(channel);
-                allEntries.AddRange(entries);
+                var schedule = await GetScheduleForChannelAsync(channel);
+                schedules.Add(schedule);
 
-                _logger.LogInformation(
-                    "Channel {Channel}: {Count} entries found.",
-                    channel.Username,
-                    entries.Count
-                );
+                if (schedule.Succeeded)
+                {
+                    _logger.LogInformation(
+                        "Channel {Channel}: {Count} entries found.",
+                        channel.Username,
+                        schedule.Entries.Count
+                    );
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Channel {Channel}: schedule could not be fetched — its Discord events are kept this cycle.",
+                        channel.Username
+                    );
+                }
             }
 
-            return allEntries;
+            return schedules;
         }
 
         private async Task AuthenticateAsync()
@@ -102,7 +115,7 @@ namespace mortys_twitch_discord_schedulebot.Services
             }
         }
 
-        private async Task<List<StreamScheduleEntry>> GetScheduleForChannelAsync(TwitchChannelConfig channel)
+        private async Task<ChannelSchedule> GetScheduleForChannelAsync(TwitchChannelConfig channel)
         {
             var entries = new List<StreamScheduleEntry>();
 
@@ -112,10 +125,11 @@ namespace mortys_twitch_discord_schedulebot.Services
                     logins: new List<string> { channel.Username }
                 );
 
+                // Unknown login (typo, renamed channel): treat as a failure so existing events stay.
                 if (userResponse.Users.Length == 0)
                 {
                     _logger.LogWarning("Channel '{Channel}' was not found on Twitch.", channel.Username);
-                    return entries;
+                    return ChannelSchedule.Failure(channel.Username);
                 }
 
                 var userId = userResponse.Users[0].Id;
@@ -127,8 +141,8 @@ namespace mortys_twitch_discord_schedulebot.Services
 
                 if (scheduleResponse?.Schedule?.Segments == null)
                 {
-                    _logger.LogWarning("No schedule found for channel '{Channel}'.", channel.Username);
-                    return entries;
+                    _logger.LogInformation("Channel '{Channel}' has no scheduled segments.", channel.Username);
+                    return ChannelSchedule.Success(channel.Username, entries);
                 }
 
                 var now = _timeProvider.GetUtcNow();
@@ -152,12 +166,19 @@ namespace mortys_twitch_discord_schedulebot.Services
                     });
                 }
             }
+            catch (BadResourceException)
+            {
+                // Twitch answers 404 when the broadcaster has not created a streaming schedule.
+                _logger.LogInformation("Channel '{Channel}' has no streaming schedule.", channel.Username);
+                return ChannelSchedule.Success(channel.Username, entries);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to fetch schedule for channel '{Channel}'.", channel.Username);
+                return ChannelSchedule.Failure(channel.Username);
             }
 
-            return entries;
+            return ChannelSchedule.Success(channel.Username, entries);
         }
     }
 }

@@ -71,7 +71,7 @@ namespace mortys_twitch_discord_schedulebot.Services
             {
                 var schedules = await _twitchService.GetAllSchedulesAsync();
 
-                _logger.LogInformation("{Count} Twitch entries found.", schedules.Count);
+                _logger.LogInformation("{Count} Twitch entries found.", schedules.Sum(s => s.Entries.Count));
 
                 await _discordService.SyncEventsAsync(schedules);
 

@@ -13,7 +13,7 @@ namespace mortys_twitch_discord_schedulebot.Tests
         {
             var entry = Entry();
 
-            var plan = _planner.Plan([entry], []);
+            var plan = _planner.Plan([Fetched("somechannel", entry)], []);
 
             var created = Assert.Single(plan.Creates);
             Assert.Same(entry, created.Entry);
@@ -31,7 +31,7 @@ namespace mortys_twitch_discord_schedulebot.Tests
             var entry = Entry();
             var existing = ExistingFor(entry);
 
-            var plan = _planner.Plan([entry], [existing]);
+            var plan = _planner.Plan([Fetched("somechannel", entry)], [existing]);
 
             Assert.Equal([existing], plan.Unchanged);
             Assert.Empty(plan.Creates);
@@ -45,7 +45,7 @@ namespace mortys_twitch_discord_schedulebot.Tests
             var existing = ExistingFor(Entry(title: "Old title"));
             var entry = Entry(title: "New title");
 
-            var plan = _planner.Plan([entry], [existing]);
+            var plan = _planner.Plan([Fetched("somechannel", entry)], [existing]);
 
             var update = Assert.Single(plan.Updates);
             Assert.Same(existing, update.Existing);
@@ -61,7 +61,7 @@ namespace mortys_twitch_discord_schedulebot.Tests
             var existing = ExistingFor(Entry(start: start));
             var entry = Entry(start: start.AddHours(1));
 
-            var plan = _planner.Plan([entry], [existing]);
+            var plan = _planner.Plan([Fetched("somechannel", entry)], [existing]);
 
             var update = Assert.Single(plan.Updates);
             Assert.Equal(start.AddHours(1), update.Desired.StartTime);
@@ -73,7 +73,7 @@ namespace mortys_twitch_discord_schedulebot.Tests
             var existing = ExistingFor(Entry(category: "Minecraft"));
             var entry = Entry(category: "Just Chatting");
 
-            var plan = _planner.Plan([entry], [existing]);
+            var plan = _planner.Plan([Fetched("somechannel", entry)], [existing]);
 
             Assert.Single(plan.Updates);
         }
@@ -83,7 +83,7 @@ namespace mortys_twitch_discord_schedulebot.Tests
         {
             var obsolete = ExistingFor(Entry(segmentId: "gone"), id: 7);
 
-            var plan = _planner.Plan([], [obsolete]);
+            var plan = _planner.Plan([Fetched("somechannel")], [obsolete]);
 
             Assert.Equal([obsolete], plan.Deletes);
         }
@@ -94,7 +94,7 @@ namespace mortys_twitch_discord_schedulebot.Tests
             var manual = new ExistingEvent(9, "Community game night", "Bring snacks", DateTimeOffset.UnixEpoch, null, "Voice");
             var withoutDescription = new ExistingEvent(10, "Quiz", null, DateTimeOffset.UnixEpoch, null, null);
 
-            var plan = _planner.Plan([Entry()], [manual, withoutDescription]);
+            var plan = _planner.Plan([Fetched("somechannel", Entry())], [manual, withoutDescription]);
 
             Assert.Empty(plan.Deletes);
             Assert.Empty(plan.Updates);
@@ -111,7 +111,7 @@ namespace mortys_twitch_discord_schedulebot.Tests
             var existingChange = ExistingFor(Entry(segmentId: "change", title: "Old title"), id: 2);
             var existingGone = ExistingFor(Entry(segmentId: "gone"), id: 3);
 
-            var plan = _planner.Plan([keep, change, add], [existingKeep, existingChange, existingGone]);
+            var plan = _planner.Plan([Fetched("somechannel", keep, change, add)], [existingKeep, existingChange, existingGone]);
 
             Assert.Equal(["add"], plan.Creates.Select(c => c.Entry.TwitchSegmentId));
             Assert.Equal([2UL], plan.Updates.Select(u => u.Existing.Id));
@@ -122,11 +122,137 @@ namespace mortys_twitch_discord_schedulebot.Tests
         [Fact]
         public void German_planner_creates_German_content()
         {
-            var plan = new EventPlanner(German).Plan([Entry(title: "")], []);
+            var plan = new EventPlanner(German).Plan([Fetched("somechannel", Entry(title: ""))], []);
 
             var created = Assert.Single(plan.Creates);
             Assert.Equal("Some Channel – Stream von Some Channel", created.Name);
             Assert.Contains("Uhr", created.Description);
+        }
+
+        // ── Deletion safety ─────────────────────────────────────────────────────
+
+        [Fact]
+        public void Failed_fetch_keeps_that_channels_events()
+        {
+            var existing = ExistingFor(Entry(segmentId: "s1"), id: 1);
+
+            var plan = _planner.Plan([Failed("somechannel")], [existing]);
+
+            Assert.Empty(plan.Deletes);
+            Assert.Equal([existing], plan.Protected);
+        }
+
+        [Fact]
+        public void Failed_fetch_of_one_channel_does_not_protect_another_channels_events()
+        {
+            var goneA = ExistingFor(Entry(segmentId: "a-gone", channel: "channel_a"), id: 1);
+            var keptB = ExistingFor(Entry(segmentId: "b-1", channel: "channel_b"), id: 2);
+
+            var plan = _planner.Plan([Fetched("channel_a"), Failed("channel_b")], [goneA, keptB]);
+
+            Assert.Equal([goneA], plan.Deletes);
+            Assert.Equal([keptB], plan.Protected);
+        }
+
+        [Fact]
+        public void Failed_fetch_creates_nothing_for_that_channel()
+        {
+            var plan = _planner.Plan([Failed("somechannel")], []);
+
+            Assert.Empty(plan.Creates);
+            Assert.Empty(plan.Deletes);
+        }
+
+        [Fact]
+        public void Successful_empty_schedule_deletes_that_channels_events()
+        {
+            // A 404 "no schedule" from Twitch is reported as a successful, empty fetch.
+            var existing = ExistingFor(Entry(segmentId: "s1"), id: 1);
+
+            var plan = _planner.Plan([Fetched("somechannel")], [existing]);
+
+            Assert.Equal([existing], plan.Deletes);
+            Assert.Empty(plan.Protected);
+        }
+
+        [Fact]
+        public void Channel_tag_comparison_ignores_case()
+        {
+            var existing = ExistingFor(Entry(segmentId: "s1", channel: "somechannel"), id: 1);
+
+            var plan = _planner.Plan([Failed("SomeChannel")], [existing]);
+
+            Assert.Equal([existing], plan.Protected);
+        }
+
+        [Fact]
+        public void Legacy_event_without_channel_tag_is_deleted_when_all_channels_succeeded()
+        {
+            var legacy = LegacyEventFor(Entry(segmentId: "old"), id: 1);
+
+            var plan = _planner.Plan([Fetched("channel_a"), Fetched("channel_b")], [legacy]);
+
+            Assert.Equal([legacy], plan.Deletes);
+        }
+
+        [Fact]
+        public void Legacy_event_without_channel_tag_is_kept_when_any_channel_failed()
+        {
+            var legacy = LegacyEventFor(Entry(segmentId: "old"), id: 1);
+
+            var plan = _planner.Plan([Fetched("channel_a"), Failed("channel_b")], [legacy]);
+
+            Assert.Empty(plan.Deletes);
+            Assert.Equal([legacy], plan.Protected);
+        }
+
+        [Fact]
+        public void Legacy_event_still_matches_and_gets_the_channel_tag()
+        {
+            var entry = Entry(segmentId: "s1");
+            var legacy = LegacyEventFor(entry, id: 1);
+
+            var plan = _planner.Plan([Fetched("somechannel", entry)], [legacy]);
+
+            var update = Assert.Single(plan.Updates);
+            Assert.Same(legacy, update.Existing);
+            Assert.EndsWith("[twitch-channel:somechannel]", update.Desired.Description);
+            Assert.Empty(plan.Creates);
+            Assert.Empty(plan.Deletes);
+        }
+
+        [Fact]
+        public void Event_of_a_removed_channel_is_deleted_when_all_configured_channels_succeeded()
+        {
+            var removed = ExistingFor(Entry(segmentId: "r1", channel: "removed_channel"), id: 1);
+
+            var plan = _planner.Plan([Fetched("somechannel")], [removed]);
+
+            Assert.Equal([removed], plan.Deletes);
+        }
+
+        [Fact]
+        public void Event_of_a_removed_channel_is_kept_when_any_configured_channel_failed()
+        {
+            // Protects against a typo in a channel name: the misspelled channel fails, and the events of the
+            // correctly spelled (now "unconfigured") channel must survive.
+            var events = ExistingFor(Entry(segmentId: "r1", channel: "mortys_channel"), id: 1);
+
+            var plan = _planner.Plan([Failed("mortys_chanel")], [events]);
+
+            Assert.Empty(plan.Deletes);
+            Assert.Equal([events], plan.Protected);
+        }
+
+        [Fact]
+        public void Manual_events_are_neither_deleted_nor_protected()
+        {
+            var manual = new ExistingEvent(9, "Community game night", "Bring snacks", DateTimeOffset.UnixEpoch, null, "Voice");
+
+            var plan = _planner.Plan([Failed("somechannel")], [manual]);
+
+            Assert.Empty(plan.Deletes);
+            Assert.Empty(plan.Protected);
         }
     }
 }

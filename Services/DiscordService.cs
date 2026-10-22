@@ -2,7 +2,6 @@ using Discord;
 using Discord.Rest;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using mortys_twitch_discord_schedulebot.Models;
 using mortys_twitch_discord_schedulebot.Sync;
 
 namespace mortys_twitch_discord_schedulebot.Services
@@ -49,7 +48,7 @@ namespace mortys_twitch_discord_schedulebot.Services
             _logger.LogInformation("Discord login successful.");
         }
 
-        public async Task SyncEventsAsync(List<StreamScheduleEntry> scheduleEntries)
+        public async Task SyncEventsAsync(IReadOnlyList<ChannelSchedule> schedules)
         {
             _logger.LogInformation("Starting Discord event synchronization...");
 
@@ -65,7 +64,7 @@ namespace mortys_twitch_discord_schedulebot.Services
 
             _logger.LogInformation(
                 "Found {ScheduleCount} Twitch entries and {EventCount} existing Discord events.",
-                scheduleEntries.Count,
+                schedules.Sum(s => s.Entries.Count),
                 guildEvents.Count
             );
 
@@ -73,7 +72,7 @@ namespace mortys_twitch_discord_schedulebot.Services
                 .Select(e => new ExistingEvent(e.Id, e.Name, e.Description, e.StartTime, e.EndTime, e.Location))
                 .ToList();
 
-            var plan = _planner.Plan(scheduleEntries, snapshots);
+            var plan = _planner.Plan(schedules, snapshots);
 
             foreach (var desired in plan.Creates)
                 await CreateEventAsync(guild, desired);
@@ -91,6 +90,14 @@ namespace mortys_twitch_discord_schedulebot.Services
                     obsolete.Name
                 );
                 await guildEvents[obsolete.Id].DeleteAsync();
+            }
+
+            foreach (var kept in plan.Protected)
+            {
+                _logger.LogWarning(
+                    "Discord event '{Name}' is not in the fetched schedules, but not every channel could be fetched — keeping it.",
+                    kept.Name
+                );
             }
 
             _logger.LogInformation("Discord event synchronization complete.");
