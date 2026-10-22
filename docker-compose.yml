@@ -39,9 +39,11 @@ services:
       # Discord__EventLanguage  → "en" (default) or "de"
       # Sync__IntervalMinutes   → default 30
       # Sync__LookaheadDays     → default 14
+      # Sync__MaxEventsPerChannel → default 10 (recurring series show only their next occurrence)
       - Discord__EventLanguage
       - Sync__IntervalMinutes
       - Sync__LookaheadDays
+      - Sync__MaxEventsPerChannel
 
     # ── Logging ───────────────────────────────────────────────────────────────
     logging:

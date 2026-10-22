@@ -1,3 +1,6 @@
+using System.Text;
+using System.Text.Json;
+
 namespace mortys_twitch_discord_schedulebot.Sync
 {
     /// <summary>
@@ -5,14 +8,47 @@ namespace mortys_twitch_discord_schedulebot.Sync
     /// </summary>
     /// <param name="EndTime">Null when Twitch has no end time for the segment.</param>
     /// <param name="IsCanceled">True when the broadcaster canceled this occurrence of a recurring segment.</param>
+    /// <param name="IsRecurring">True when the segment is one weekly occurrence of a recurring series.</param>
     public record TwitchSegment(
         string Id,
         string Title,
         string CategoryName,
         DateTimeOffset StartTime,
         DateTimeOffset? EndTime,
-        bool IsCanceled
-    );
+        bool IsCanceled,
+        bool IsRecurring = false
+    )
+    {
+        /// <summary>
+        /// Identifies the recurring series this occurrence belongs to; occurrences of one series share it.
+        /// </summary>
+        /// <remarks>
+        /// Not documented by Twitch: segment IDs are base64-encoded JSON such as
+        /// <c>{"segmentID":"e4acc724-…","isoYear":2021,"isoWeek":26}</c>, where <c>segmentID</c> is the same for every
+        /// week of a series. If the ID cannot be decoded, the segment counts as its own series, so nothing is hidden.
+        /// </remarks>
+        public string SeriesKey => IsRecurring ? TryDecodeSeriesId(Id) ?? Id : Id;
+
+        private static string? TryDecodeSeriesId(string segmentId)
+        {
+            try
+            {
+                var json = Encoding.UTF8.GetString(Convert.FromBase64String(segmentId));
+                using var document = JsonDocument.Parse(json);
+
+                return document.RootElement.ValueKind == JsonValueKind.Object &&
+                       document.RootElement.TryGetProperty("segmentID", out var series) &&
+                       series.ValueKind == JsonValueKind.String &&
+                       !string.IsNullOrEmpty(series.GetString())
+                    ? "series:" + series.GetString()
+                    : null;
+            }
+            catch (Exception ex) when (ex is FormatException or JsonException or ArgumentException)
+            {
+                return null;
+            }
+        }
+    }
 
     /// <summary>
     /// The broadcaster's vacation, during which no segments take place.

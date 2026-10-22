@@ -3,18 +3,27 @@ namespace mortys_twitch_discord_schedulebot.Sync
     /// <summary>
     /// Selects the Twitch segments that are mirrored to Discord. Pure: no I/O, no clock.
     /// </summary>
+    /// <remarks>
+    /// Keeps segments inside the look-ahead window that are not canceled and not during a vacation; of each recurring
+    /// series only the next occurrence; at most <c>maxEvents</c> segments, earliest first.
+    /// </remarks>
     public static class SegmentSelector
     {
-        public static IEnumerable<TwitchSegment> Select(
+        public static IReadOnlyList<TwitchSegment> Select(
             IEnumerable<TwitchSegment> segments,
             VacationWindow? vacation,
             DateTimeOffset now,
-            int lookaheadDays) =>
-            segments.Where(s =>
-                ScheduleWindow.Includes(s.StartTime, now, lookaheadDays) &&
-                !s.IsCanceled &&
-                (vacation == null || !vacation.Contains(s.StartTime))
-            );
+            int lookaheadDays,
+            int maxEvents) =>
+            segments
+                .Where(s =>
+                    ScheduleWindow.Includes(s.StartTime, now, lookaheadDays) &&
+                    !s.IsCanceled &&
+                    (vacation == null || !vacation.Contains(s.StartTime)))
+                .OrderBy(s => s.StartTime)
+                .DistinctBy(s => s.SeriesKey)
+                .Take(Math.Max(0, maxEvents))
+                .ToList();
     }
 
     /// <summary>

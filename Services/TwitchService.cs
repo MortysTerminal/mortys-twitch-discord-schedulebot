@@ -14,6 +14,7 @@ namespace mortys_twitch_discord_schedulebot.Services
         private readonly List<TwitchChannelConfig> _channels;
         private readonly ILogger<TwitchService> _logger;
         private readonly int _lookaheadDays;
+        private readonly int _maxEventsPerChannel;
         private readonly TimeProvider _timeProvider;
 
         public TwitchService(IConfiguration configuration, ILogger<TwitchService> logger, TimeProvider timeProvider)
@@ -53,6 +54,7 @@ namespace mortys_twitch_discord_schedulebot.Services
 
             _channels = validChannels;
             _lookaheadDays = configuration.GetValue<int>("Sync:LookaheadDays", 14);
+            _maxEventsPerChannel = configuration.GetValue<int>("Sync:MaxEventsPerChannel", 10);
 
             _twitchApi = new TwitchAPI();
             _twitchApi.Settings.ClientId = clientId;
@@ -162,6 +164,10 @@ namespace mortys_twitch_discord_schedulebot.Services
                     cursor = scheduleResponse!.Pagination?.Cursor;
                     if (!SchedulePaging.NeedsNextPage(pageSegments, cursor, cutoff))
                         break;
+
+                    // Enough events already; later pages cannot add earlier segments.
+                    if (SegmentSelector.Select(segments, vacation, now, _lookaheadDays, _maxEventsPerChannel).Count >= _maxEventsPerChannel)
+                        break;
                 }
 
                 var canceled = segments.Count(s => s.IsCanceled);
@@ -178,7 +184,7 @@ namespace mortys_twitch_discord_schedulebot.Services
                     );
                 }
 
-                foreach (var segment in SegmentSelector.Select(segments, vacation, now, _lookaheadDays))
+                foreach (var segment in SegmentSelector.Select(segments, vacation, now, _lookaheadDays, _maxEventsPerChannel))
                 {
                     entries.Add(new StreamScheduleEntry
                     {
@@ -217,7 +223,8 @@ namespace mortys_twitch_discord_schedulebot.Services
                 StartTime: ToUtc(segment.StartTime),
                 // TwitchLib leaves EndTime at DateTime.MinValue when Twitch sends no end time.
                 EndTime: segment.EndTime == default ? null : ToUtc(segment.EndTime),
-                IsCanceled: segment.CanceledUntil.HasValue
+                IsCanceled: segment.CanceledUntil.HasValue,
+                IsRecurring: segment.IsRecurring
             );
 
         // Twitch sends UTC timestamps; treat an unspecified kind as UTC instead of local time.

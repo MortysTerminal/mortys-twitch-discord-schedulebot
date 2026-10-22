@@ -9,8 +9,105 @@ namespace mortys_twitch_discord_schedulebot.Tests
         private static TwitchSegment Segment(string id, DateTimeOffset start, bool canceled = false) =>
             new(id, "Title", "Category", start, start.AddHours(2), canceled);
 
-        private static IEnumerable<string> SelectIds(IEnumerable<TwitchSegment> segments, VacationWindow? vacation = null) =>
-            SegmentSelector.Select(segments, vacation, Now, lookaheadDays: 14).Select(s => s.Id);
+        // An occurrence of a recurring series, with an ID in the format Twitch uses (base64 JSON).
+        private static TwitchSegment Weekly(string series, DateTimeOffset start, bool canceled = false)
+        {
+            var week = System.Globalization.ISOWeek.GetWeekOfYear(start.UtcDateTime);
+            var json = $"{{\"segmentID\":\"{series}\",\"isoYear\":{start.Year},\"isoWeek\":{week}}}";
+            var id = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
+            return new TwitchSegment(id, "Weekly", "Category", start, start.AddHours(2), canceled, IsRecurring: true);
+        }
+
+        private static IEnumerable<string> SelectIds(
+            IEnumerable<TwitchSegment> segments, VacationWindow? vacation = null, int maxEvents = 10) =>
+            SegmentSelector.Select(segments, vacation, Now, lookaheadDays: 14, maxEvents).Select(s => s.Id);
+
+        [Fact]
+        public void Recurring_series_shows_only_its_next_occurrence()
+        {
+            var thisWeek = Weekly("series-a", Now.AddDays(1));
+            var nextWeek = Weekly("series-a", Now.AddDays(8));
+
+            Assert.Equal([thisWeek.Id], SelectIds([nextWeek, thisWeek]));
+        }
+
+        [Fact]
+        public void Different_recurring_series_are_shown_side_by_side()
+        {
+            var monday = Weekly("series-monday", Now.AddDays(1));
+            var friday = Weekly("series-friday", Now.AddDays(4));
+            var nextMonday = Weekly("series-monday", Now.AddDays(8));
+
+            Assert.Equal([monday.Id, friday.Id], SelectIds([monday, friday, nextMonday]));
+        }
+
+        [Fact]
+        public void Canceled_next_occurrence_shows_the_one_after()
+        {
+            var canceled = Weekly("series-a", Now.AddDays(1), canceled: true);
+            var following = Weekly("series-a", Now.AddDays(8));
+
+            Assert.Equal([following.Id], SelectIds([canceled, following]));
+        }
+
+        [Fact]
+        public void Occurrence_in_vacation_is_replaced_by_the_first_one_after()
+        {
+            var vacation = new VacationWindow(Now, Now.AddDays(5));
+            var during = Weekly("series-a", Now.AddDays(1));
+            var after = Weekly("series-a", Now.AddDays(8));
+
+            Assert.Equal([after.Id], SelectIds([during, after], vacation));
+        }
+
+        [Fact]
+        public void One_time_segments_are_never_merged()
+        {
+            Assert.Equal(["a", "b"], SelectIds([Segment("a", Now.AddDays(1)), Segment("b", Now.AddDays(8))]));
+        }
+
+        [Fact]
+        public void Recurring_segment_with_an_undecodable_id_counts_as_its_own_series()
+        {
+            var first = new TwitchSegment("not-base64!", "t", "c", Now.AddDays(1), null, false, IsRecurring: true);
+            var second = new TwitchSegment("also-opaque", "t", "c", Now.AddDays(8), null, false, IsRecurring: true);
+
+            Assert.Equal(["not-base64!", "also-opaque"], SelectIds([first, second]));
+        }
+
+        [Fact]
+        public void Twitch_documentation_example_id_decodes_to_its_series()
+        {
+            // Example segment from https://dev.twitch.tv/docs/api/reference/#get-channel-stream-schedule
+            var segment = new TwitchSegment(
+                "eyJzZWdtZW50SUQiOiJlNGFjYzcyNC0zNzFmLTQwMmMtODFjYS0yM2FkYTc5NzU5ZDQiLCJpc29ZZWFyIjoyMDIxLCJpc29XZWVrIjoyNn0=",
+                "t", "c", Now.AddDays(1), null, false, IsRecurring: true);
+
+            Assert.Equal("series:e4acc724-371f-402c-81ca-23ada79759d4", segment.SeriesKey);
+        }
+
+        [Fact]
+        public void At_most_max_events_are_selected_earliest_first()
+        {
+            var segments = Enumerable.Range(1, 13).Select(i => Segment($"s{i:00}", Now.AddHours(i * 20))).Reverse();
+
+            Assert.Equal(["s01", "s02", "s03"], SelectIds(segments, maxEvents: 3));
+            Assert.Equal(10, SelectIds(segments).Count());
+        }
+
+        [Fact]
+        public void Cap_applies_after_merging_recurring_series()
+        {
+            var segments = new[]
+            {
+                Weekly("series-a", Now.AddDays(1)),
+                Weekly("series-a", Now.AddDays(8)),
+                Segment("one-time", Now.AddDays(2)),
+            };
+
+            Assert.Equal(2, SelectIds(segments, maxEvents: 2).Count());
+            Assert.Contains("one-time", SelectIds(segments, maxEvents: 2));
+        }
 
         [Fact]
         public void Upcoming_segment_inside_the_window_is_selected()
