@@ -1,5 +1,5 @@
 ﻿# ── Phase 1: Build ────────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 WORKDIR /src
 
@@ -12,7 +12,7 @@ COPY . .
 RUN dotnet publish "mortys-twitch-discord-schedulebot.csproj" -c Release -o /app/publish
 
 # ── Phase 2: Runtime ──────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/runtime:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
 
 WORKDIR /app
 
