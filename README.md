@@ -98,11 +98,13 @@ Unset slots are automatically ignored — only the slots you fill in Portainer a
 | Environment variable | Default | Description |
 |---|---|---|
 | `Discord__EventLanguage` | `en` | Language used inside Discord events: `en` (English) or `de` (German). Set in Portainer to override. |
-| `Sync__IntervalMinutes` | `30` | How often (in minutes) the bot syncs with Twitch. Set in Portainer to override. |
-| `Sync__LookaheadDays` | `14` | How many days ahead to include in Discord events. Set in Portainer to override. |
-| `Sync__MaxEventsPerChannel` | `10` | Maximum number of Discord events per channel (earliest first). A recurring stream only shows its next occurrence. |
+| `Sync__IntervalMinutes` | `30` | How often (in minutes) the bot syncs with Twitch. Allowed: 5–1440. Set in Portainer to override. |
+| `Sync__LookaheadDays` | `14` | How many days ahead to include in Discord events. Allowed: 1–60. Set in Portainer to override. |
+| `Sync__MaxEventsPerChannel` | `10` | Maximum number of Discord events per channel (earliest first). A recurring stream only shows its next occurrence. Allowed: 1–50. |
 | `IMAGE_TAG` | `latest` | Image tag used by `docker-compose.yml`. Set it to a `sha-…` tag to pin or roll back a version (see below). |
 | `DOTNET_ENVIRONMENT` | *(not set)* | Set to `Production` if you want environment-specific config loading |
+
+An empty value means "not set" and uses the default. A value outside the allowed range stops the bot at start-up with a message such as `Sync__IntervalMinutes = '0' is invalid: use a whole number from 5 to 1440 (default 30 when not set).` — so a typo can never make it sync non-stop or delete all events.
 
 ---
 

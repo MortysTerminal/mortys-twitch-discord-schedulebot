@@ -1,7 +1,6 @@
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using mortys_twitch_discord_schedulebot.Services;
+using mortys_twitch_discord_schedulebot.Sync;
 
 namespace mortys_twitch_discord_schedulebot.Services
 {
@@ -15,13 +14,13 @@ namespace mortys_twitch_discord_schedulebot.Services
         public SyncService(
             TwitchService twitchService,
             DiscordService discordService,
-            IConfiguration configuration,
+            SyncOptions options,
             ILogger<SyncService> logger)
         {
             _twitchService = twitchService;
             _discordService = discordService;
             _logger = logger;
-            _intervalMinutes = configuration.GetValue<int>("Sync:IntervalMinutes", 30);
+            _intervalMinutes = options.IntervalMinutes;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
