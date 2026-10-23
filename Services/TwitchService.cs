@@ -17,7 +17,7 @@ namespace mortys_twitch_discord_schedulebot.Services
         private readonly int _maxEventsPerChannel;
         private readonly TimeProvider _timeProvider;
 
-        public TwitchService(IConfiguration configuration, ILogger<TwitchService> logger, TimeProvider timeProvider)
+        public TwitchService(IConfiguration configuration, SyncOptions options, ILogger<TwitchService> logger, TimeProvider timeProvider)
         {
             _logger = logger;
             _timeProvider = timeProvider;
@@ -53,8 +53,8 @@ namespace mortys_twitch_discord_schedulebot.Services
             }
 
             _channels = validChannels;
-            _lookaheadDays = configuration.GetValue<int>("Sync:LookaheadDays", 14);
-            _maxEventsPerChannel = configuration.GetValue<int>("Sync:MaxEventsPerChannel", 10);
+            _lookaheadDays = options.LookaheadDays;
+            _maxEventsPerChannel = options.MaxEventsPerChannel;
 
             _twitchApi = new TwitchAPI();
             _twitchApi.Settings.ClientId = clientId;

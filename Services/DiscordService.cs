@@ -86,13 +86,7 @@ namespace mortys_twitch_discord_schedulebot.Services
                 _logger.LogInformation("Event '{Name}' is up to date — no changes needed.", unchanged.Name);
 
             foreach (var obsolete in plan.Deletes)
-            {
-                _logger.LogInformation(
-                    "Discord event '{Name}' is no longer in the schedule — deleting.",
-                    obsolete.Name
-                );
-                await guildEvents[obsolete.Id].DeleteAsync();
-            }
+                await DeleteEventAsync(guildEvents[obsolete.Id]);
 
             foreach (var running in plan.Started)
                 _logger.LogInformation("Event '{Name}' has already started — leaving it to Discord.", running.Name);
@@ -152,6 +146,22 @@ namespace mortys_twitch_discord_schedulebot.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to update event '{Name}'.", existingEvent.Name);
+            }
+        }
+
+        private async Task DeleteEventAsync(RestGuildEvent obsoleteEvent)
+        {
+            try
+            {
+                _logger.LogInformation(
+                    "Discord event '{Name}' is no longer in the schedule — deleting.",
+                    obsoleteEvent.Name
+                );
+                await obsoleteEvent.DeleteAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to delete event '{Name}'.", obsoleteEvent.Name);
             }
         }
 
