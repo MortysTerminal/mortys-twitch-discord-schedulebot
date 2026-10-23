@@ -1,6 +1,7 @@
 services:
   schedulebot:
-    image: ghcr.io/mortysterminal/mortys-twitch-discord-schedulebot:latest
+    # IMAGE_TAG (stack variable) pins a version, e.g. sha-3ff5943 for a rollback; defaults to latest.
+    image: ghcr.io/mortysterminal/mortys-twitch-discord-schedulebot:${IMAGE_TAG:-latest}
     container_name: mortys-schedulebot
     restart: unless-stopped
 
@@ -33,7 +34,7 @@ services:
       #   Twitch__Channels__1__DisplayName = DentuGaming
       #
       # Slots 0–4 are available without editing this file.
-      # Add more <None Update> lines in the same pattern for slot 5+.
+      # For slot 5+, add more Twitch__Channels__N__Username / __DisplayName lines below.
       - Twitch__Channels__0__Username
       - Twitch__Channels__0__DisplayName
       - Twitch__Channels__1__Username
